@@ -1,0 +1,48 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Vol2PC: Run Demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/demo_run.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "python": "/home/lqb/miniconda3/envs/v2gs/bin/python"
+        },
+        {
+            "name": "Vol2PC: Run CLI (List Plugins)",
+            "type": "python",
+            "request": "launch",
+            "module": "vol2pc.cli",
+            "args": [
+                "list"
+            ],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Vol2PC: Run Pipeline (Sample)",
+            "type": "python",
+            "request": "launch",
+            "module": "vol2pc.cli",
+            "args": [
+                "run",
+                "--input",
+                "${workspaceFolder}/examples/synthetic_data",
+                "--config",
+                "${workspaceFolder}/examples/config.yaml",
+                "--output",
+                "${workspaceFolder}/output.ply"
+            ],
+            "console": "integratedTerminal"
+        }
+    ]
+}
