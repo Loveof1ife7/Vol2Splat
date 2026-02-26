@@ -1,0 +1,13 @@
+io:
+  reader: vti
+
+preprocess:
+  - name: normalize
+    method: minmax
+
+sampling:
+  name: gradient
+  n_points: 100000
+
+export:
+  writer: ply

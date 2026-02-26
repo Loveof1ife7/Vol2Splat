@@ -1,0 +1,22 @@
+io:
+  reader: vti
+  path: datasets/foot_256x256x256_uint8.vti
+
+preprocess:
+  - name: normalize
+    method: minmax
+
+sampling:
+  name: wavelet
+  n_points: 50000
+  wavelet: haar
+  level: 3
+  mode: periodic
+  device: cuda
+  alpha: 1.0
+  beta: 1.0
+  k_min: 100
+
+export:
+  writer: ply
+  path: output_foot_wavelet.ply

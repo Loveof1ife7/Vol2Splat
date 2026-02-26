@@ -17,13 +17,19 @@ class Volume:
     """
     def __init__(
         self,
-        data: np.ndarray,
+        data: np.ndarray, 
         spacing: Tuple[float, float, float] = (1.0, 1.0, 1.0),
         origin: Tuple[float, float, float] = (0.0, 0.0, 0.0),
         direction: Optional[np.ndarray] = None,
         metadata: Optional[Metadata] = None
     ):
-        self.data = data
+        '''
+        Convertion Rule
+            World = Origin + Direction * (Index * Spacing)
+            Index = (i, j, k)
+            Memory = data[k, j, i]
+        '''
+        self.data = data 
         self.spacing = np.array(spacing, dtype=np.float64)
         self.origin = np.array(origin, dtype=np.float64)
         
@@ -43,18 +49,12 @@ class Volume:
         """
         Convert index coordinates to world coordinates.
         Args:
-            ijk: (N, 3) array of index coordinates (i, j, k) -> (z, y, x) usually, 
-                 but standard usually implies (x, y, z) for spatial. 
-                 Let's stick to user convention or standard? 
-                 User said: Volume.data : np.ndarray, shape (Z,Y,X)
-                 User said: Volume.index_to_world(i,j,k) -> xyz
-                 Usually in medical imaging:
+            ijk: (N, 3) array of index coordinates (i, j, k) 
                  i -> X index
                  j -> Y index
                  k -> Z index
-                 But data is (Z, Y, X) => (k, j, i) access.
                  Let's assume input 'ijk' corresponds to (x_idx, y_idx, z_idx).
-                 
+                 But data is (Z, Y, X) => (k, j, i) access.
                  World = Origin + Direction * (Index * Spacing)
         """
         # Ensure input is float for calculation

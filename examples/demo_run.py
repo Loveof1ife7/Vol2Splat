@@ -53,7 +53,7 @@ def main():
             }
         ],
         "sampling": {
-            "name": "uniform",
+            "name": "gradient",
             "n_points": 5000
         },
         "export": {

@@ -1,0 +1,45 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.ruff_cache/
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+
+# Build/dist
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Project outputs
+*.ply
+*.npz
+output*.ply
+output*/
+
+# Datasets (large binaries)
+datasets/**/*.vti
+datasets/**/*.nii
+datasets/**/*.mhd
+datasets/**/*.raw
+datasets/**/*.npy
+
+# Temporary files
+tmp/
+*.tmp
+*.bak

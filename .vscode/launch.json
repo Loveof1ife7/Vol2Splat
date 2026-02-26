@@ -19,6 +19,14 @@
             "python": "/home/lqb/miniconda3/envs/v2gs/bin/python"
         },
         {
+            "name": "Vol2PC: Test LL Wavelet",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test_ll_wavelet.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "Vol2PC: Run CLI (List Plugins)",
             "type": "python",
             "request": "launch",

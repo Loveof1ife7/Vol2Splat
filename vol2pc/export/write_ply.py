@@ -15,12 +15,18 @@ class PLYWriter(Writer):
             f.write("property float y\n")
             f.write("property float z\n")
             
-            attr_keys = sorted(list(pc.attrs.keys()))
-            for k in attr_keys:
-                if pc.attrs[k].ndim > 1:
-                    if pc.attrs[k].shape[1] == 1:
+            attr_keys = []
+            for k in sorted(list(pc.attrs.keys())):
+                arr = pc.attrs[k]
+                if not isinstance(arr, np.ndarray):
+                    continue
+                if not np.issubdtype(arr.dtype, np.number):
+                    continue
+                attr_keys.append(k)
+                if arr.ndim > 1:
+                    if arr.shape[1] == 1:
                         f.write(f"property float {k}\n")
-                    elif pc.attrs[k].shape[1] == 3:
+                    elif arr.shape[1] == 3:
                         f.write(f"property float {k}_x\n")
                         f.write(f"property float {k}_y\n")
                         f.write(f"property float {k}_z\n")
@@ -34,7 +40,7 @@ class PLYWriter(Writer):
                 arr = pc.attrs[k]
                 if arr.ndim == 1:
                     arr = arr.reshape(-1, 1)
-                data_list.append(arr)
+                data_list.append(arr.astype(np.float32, copy=False))
             
             data = np.hstack(data_list)
             np.savetxt(f, data, fmt="%.6f")
