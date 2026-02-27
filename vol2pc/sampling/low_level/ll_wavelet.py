@@ -129,6 +129,15 @@ def sparsify_subbands(band, k_budget, lam=3.0):
     if isinstance(band, torch.Tensor):
         device = band.device
         v = band.squeeze(0).abs()
+        # If band was (1, D, H, W), squeeze(0) makes it (D, H, W). ndim=3.
+        # If band was (4, D, H, W), squeeze(0) makes it (4, D, H, W) if dimension 0 is not 1? No.
+        # squeeze(0) only removes dim 0 if size is 1.
+        # If input is (4, D, H, W), squeeze(0) does nothing.
+        
+        if v.ndim == 4:
+             # (4, D, H, W) -> Compute norm -> (D, H, W)
+             v = torch.norm(v, dim=0)
+        
         flat = v.reshape(-1)
         k = min(k_budget, flat.numel())
         vals, topk_idx = torch.topk(flat, k, largest=True)

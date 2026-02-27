@@ -14,7 +14,7 @@ logger = get_logger("sampling.wavelet")
 
 class WaveletSampler(Sampler):
     """
-    Density-field Wavelet Sampler.
+    Density/RGBA-field Wavelet Sampler.
 
     Assumptions:
         - vol.data is a scalar density volume with shape (Z, Y, X)
@@ -35,12 +35,9 @@ class WaveletSampler(Sampler):
 
         logger.info(f"Wavelet sampling: {wavelet} level={level} points={n_points} on {device}")
 
-        # 1. to tensor: (1, Z, Y, X) on device 
+        # 1. to tensor: (C, Z, Y, X) on device
         data_np = vol.data.astype(np.float32, copy=False)
-        if data_np.ndim != 3:
-            raise ValueError(f"WaveletSampler expects density volume (Z,Y,X), got {data_np.shape}")
-
-        data_tensor = torch.from_numpy(data_np).unsqueeze(0).contiguous().to(device)  # (1,D,H,W)
+        data_tensor, multi_channel = self.shape_check_and_to_tensor(data_np, device)
 
         # 2. DWT 
         coeffs = self.wavelet_transform(
@@ -48,13 +45,63 @@ class WaveletSampler(Sampler):
             wavelet=wavelet,
             level=level,
             mode=mode,
-            multi_channel=False,
+            multi_channel=multi_channel,
             device=device
         )
+        
+        # If multi_channel, coeffs is a dict {'r': [...], 'g': [...], ...}
+        # We need to unify this layout to reuse alloc_k_for_bands logic.
+        # Strategy:
+        # If multi-channel, we can process each channel separately or aggregate energy.
+        # Aggregating energy seems appropriate for sampling "structure" across all channels.
+        
+        layout = []
+        if multi_channel:
+             # coeffs is a dict: {'r': [approx, details...], 'g': ...}
+             # We want to merge them into a single structure where each band tensor is (4, D, H, W) or we aggregate energy now.
+             # alloc_k_for_bands expects a list [approx, dict(details), ...] 
+             # where approx is tensor and details is dict {band_name: tensor}
+             # The structure of coeffs['r'] is: [approx_tensor, {details_level_L}, ...]
+             # We will reconstruct a "virtual" single channel layout where each tensor has 4 channels
+             # and we sum energy over channels in bands_info_from_layout.
+             # Note: vol.shape is (C, Z, Y, X) for 4D volume, but VolSampler Volume object usually has data.shape
+             # However, VolSampler assumes (Z, Y, X) usually. For 4D data it's (C, Z, Y, X).
+             # Let's trust data_np.shape logic from shape_check_and_to_tensor
+             
+             # C, X, Y, Z = vol.shape # This is risky if vol.shape is just data.shape
+             
+             # Let's get dims from tensor
+             # data_tensor is (C, Z, Y, X)
+             Z, Y, X = data_tensor.shape[1], data_tensor.shape[2], data_tensor.shape[3]
+             
+             channels = ['r', 'g', 'b', 'a']
+             # Check consistency
+             n_levels = len(coeffs['r'])
+             
+             # 1. Approx level (index 0)
+             # Stack [1, D, H, W] -> [4, D, H, W]
+             approx_list = [coeffs[c][0] for c in channels]
+             approx_combined = torch.cat(approx_list, dim=0)
+             layout.append(approx_combined)
+             
+             # 2. Detail levels
+             for l in range(1, n_levels):
+                  # coeffs['r'][l] is a dict {'aad': tensor, ...}
+                  combined_details = {}
+                  keys = coeffs['r'][l].keys()
+                  for k in keys:
+                       # Stack
+                       tensor_list = [coeffs[c][l][k] for c in channels]
+                       combined_details[k] = torch.cat(tensor_list, dim=0)
+                  layout.append(combined_details)
+        else:
+            # Single channel: data_tensor is (1, Z, Y, X)
+            Z, Y, X = data_tensor.shape[1], data_tensor.shape[2], data_tensor.shape[3]
+            layout = coeffs
 
         # 3. analyze bands and allocate k for each band
-        shape_full = torch.tensor(vol.data.shape, device=device, dtype=torch.long)  # (Z,Y,X)
-        bands_info = self.bands_info_from_layout(layout=coeffs, level=level)
+        shape_full = torch.tensor([Z, Y, X], device=device, dtype=torch.long)
+        bands_info = self.bands_info_from_layout(layout=layout, level=level)
 
         k_alloc = self.alloc_k_for_bands(
             bands_info=bands_info,
@@ -65,7 +112,6 @@ class WaveletSampler(Sampler):
         )
 
         # anchor center in zyx
-        Z, Y, X = vol.data.shape
         mu0_anchor = torch.tensor([(Z - 1) / 2.0, (Y - 1) / 2.0, (X - 1) / 2.0],
                                   device=device, dtype=torch.float32)
 
@@ -81,7 +127,9 @@ class WaveletSampler(Sampler):
                 continue
 
             # band_ref: torch.Tensor (1, Dz, Dy, Dx) for both approx and detail
-            # You may choose to skip approx (lev==0) in step1, but keep it for now.
+            # Or (4, Dz, Dy, Dx) if aggregated in step 2.
+            # sparsify_subbands handles (4, ...) by computing norm.
+            
             idx, vals, T = sparsify_subbands(band_ref, k_budget)  # idx: (K,3) zyx in subband grid
 
             if idx is None or idx.numel() == 0:
@@ -130,12 +178,118 @@ class WaveletSampler(Sampler):
         attrs = {
             "coeff_abs": vals.abs().detach().cpu().numpy().astype(np.float32),
             "level": levels.detach().cpu().numpy().astype(np.int32),
-            "band": np.array(all_band, dtype=object),
+            # "band": np.array(all_band, dtype=object), # skip string attr for PLY safety
         }
+        
+        # Add RGBA color attribute if input was RGBA
+        if multi_channel:
+             # We need to sample the RGBA volume at the selected coordinates
+             # centers_zyx is (K, 3) float coordinates in index space (z, y, x)
+             # vol.data is (4, Z, Y, X)
+             
+             # Use grid_sample for interpolation
+             # grid_sample expects input (N, C, D, H, W) and grid (N, D, H, W, 3) in [-1, 1] range
+             # Our centers are in [0, Z-1], [0, Y-1], [0, X-1]
+             
+             # Normalize coordinates to [-1, 1]
+             # (2 * coord / (size - 1)) - 1
+             
+             K = centers_zyx.shape[0]
+             
+             # Prepare grid: (1, K, 1, 1, 3) for sampling K points?
+             # Or just (1, 1, 1, K, 3)?
+             # PyTorch grid_sample is for dense grids usually.
+             # For sparse points, we can reshape them to (1, 1, 1, K, 3)
+             
+             # Coordinates order for grid_sample is (x, y, z)
+             # centers_zyx is (z, y, x)
+             # So we need (centers_x, centers_y, centers_z)
+             
+             cx = centers_zyx[:, 2]
+             cy = centers_zyx[:, 1]
+             cz = centers_zyx[:, 0]
+             
+             # Normalize
+             # X, Y, Z are spatial dimensions
+             # grid_sample expects coordinates in [-1, 1]
+             # index 0 -> -1, index size-1 -> 1
+             # formula: 2 * (index / (size - 1)) - 1
+             # If size is 1 (unlikely for spatial dims but possible), this is nan.
+             
+             def normalize_coord(c, size):
+                 if size > 1:
+                     return (2 * c / (size - 1)) - 1
+                 return torch.zeros_like(c)
+
+             nx = normalize_coord(cx, X)
+             ny = normalize_coord(cy, Y)
+             nz = normalize_coord(cz, Z)
+             
+             grid = torch.stack([nx, ny, nz], dim=1) # (K, 3)
+             grid = grid.view(1, 1, 1, K, 3) # (N, Dout, Hout, Wout, 3)
+             
+             # Input data
+             input_tensor = data_tensor # (4, Z, Y, X)
+             if input_tensor.ndim == 4:
+                  input_tensor = input_tensor.unsqueeze(0) # (1, 4, Z, Y, X)
+             
+             # Sample
+             # align_corners=True matches the -1 to 1 mapping with boundary pixels
+             sampled_rgba = torch.nn.functional.grid_sample(
+                  input_tensor, 
+                  grid, 
+                  mode='nearest', # Use nearest to avoid interpolation artifacts or out of bounds
+                  padding_mode='border', 
+                  align_corners=True
+             ) # (1, 4, 1, 1, K)
+             
+             # Reshape to (K, 4)
+             sampled_rgba = sampled_rgba.view(4, K).permute(1, 0) # (K, 4)
+             
+             # Add to attributes
+             rgba_np = sampled_rgba.detach().cpu().numpy().astype(np.float32)
+             
+             # Add individual channels for PLY writer convenience (if it doesn't handle vector attrs well, though PLYWriter usually does)
+             # PLYWriter handles (K, 4) if key is like "colors" or we can split.
+             # Let's add as separate attributes or standard ply colors?
+             # Standard PLY colors are usually uchar 0-255 named red, green, blue, alpha.
+             # Or float named r, g, b, a?
+             # Let's add as 'red', 'green', 'blue', 'alpha' float properties.
+             
+             attrs['red'] = rgba_np[:, 0:1]
+             attrs['green'] = rgba_np[:, 1:2]
+             attrs['blue'] = rgba_np[:, 2:3]
+             attrs['alpha'] = rgba_np[:, 3:4]
 
         pc = PointCloud(xyz=xyz, attrs=attrs, metadata=vol.metadata)
         return pc
 
+    def shape_check_and_to_tensor(self, data_np, device):
+        data_tensor = None
+        multi_channel = False
+        if data_np.ndim == 3:
+             # (Z, Y, X) -> (1, Z, Y, X)
+             data_tensor = torch.from_numpy(data_np).unsqueeze(0).contiguous().to(device)
+             multi_channel = False
+        elif data_np.ndim == 4:
+             # (C, Z, Y, X) -> (C, Z, Y, X)
+             # Assume C=4 for RGBA,
+             # dwt3 handles multi_channel if multi_channel=True and input is (4, D, H, W)
+             if data_np.shape[0] == 4:
+                  data_tensor = torch.from_numpy(data_np).contiguous().to(device)
+                  multi_channel = True
+             else:
+                  # If C != 4 but ndim=4, it's (1, Z, Y, X) 
+                  if data_np.shape[0] == 1:
+                       data_tensor = torch.from_numpy(data_np).contiguous().to(device)
+                       multi_channel = False
+                  else:
+                       # For now, let's stick to supporting 1 or 4 channels as per user request (RGBA).
+                       raise ValueError(f"WaveletSampler supports 1 or 4 channels, got {data_np.shape[0]}")
+        else:
+             raise ValueError(f"WaveletSampler expects volume (Z,Y,X) or (4,Z,Y,X), got {data_np.shape}")
+        return data_tensor, multi_channel
+    
     @torch.no_grad()
     def wavelet_transform(self, data: torch.Tensor, wavelet: str, level: int, mode: str, multi_channel: bool, device: str):
         return dwt3(
@@ -149,22 +303,22 @@ class WaveletSampler(Sampler):
 
     def bands_info_from_layout(self, layout, level):
         bands_info = []
-        for lev, dic in enumerate(layout):
+        for lev, bands_dic in enumerate(layout):
             if lev == 0:
-                assert isinstance(dic, torch.Tensor), "layout[0] (approx) is not a tensor"
+                assert isinstance(bands_dic, torch.Tensor), "layout[0] (approx) is not a tensor"
                 o = "aaa"
-                band_ref = dic
+                band_ref = bands_dic
                 E = torch.sum(band_ref ** 2)
                 N = int(band_ref.numel())
                 j = 0  # zero wavelet level refer to the 'aaa'('LLL') band
                 bands_info.append((lev, j, o, band_ref, E, N))
                 continue
 
-            for o, band_ref in dic.items():
-                E = torch.sum(band_ref ** 2)
-                N = int(band_ref.numel())
+            for o, band in bands_dic.items():
+                E = torch.sum(band ** 2)
+                N = int(band.numel())
                 j = level - (lev - 1)  # matches your test: lev=1 -> j=level, lev=2 -> j=level-1 ...
-                bands_info.append((lev, j, o, band_ref, E, N))
+                bands_info.append((lev, j, o, band, E, N))
         return bands_info
 
     def alloc_k_for_bands(self, bands_info, K_total, alpha=1.0, beta=1.0, gamma=1.2, k_min=100, mode="default"):

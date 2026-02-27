@@ -10,6 +10,23 @@
             "justMyCode": true
         },
         {
+            "name": "Vol2PC: Run Rotstrat Pipeline",
+            "type": "python",
+            "request": "launch",
+            "module": "vol2pc.cli",
+            "args": [
+                "run",
+                "--input",
+                "${workspaceFolder}/datasets/rotstrat_temperature_512/rotstrat_temperature_zyx_00_00_00.vti",
+                "--config",
+                "${workspaceFolder}/config/config_rotstrat.yaml",
+                "--output",
+                "${workspaceFolder}/output_rotstrat.ply"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
             "name": "Vol2PC: Run Demo",
             "type": "python",
             "request": "launch",

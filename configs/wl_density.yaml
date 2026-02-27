@@ -1,6 +1,6 @@
 io:
   reader: vti
-  path: datasets/foot_256x256x256_uint8.vti
+  path: datasets/supernova_432x432x432_float32x.vti
 
 preprocess:
   - name: normalize
@@ -13,10 +13,7 @@ sampling:
   level: 3
   mode: periodic
   device: cuda
-  alpha: 1.0
-  beta: 1.0
-  k_min: 100
 
 export:
   writer: ply
-  path: output_foot_wavelet.ply
+  path: results/supernova_density_wavelet.ply
