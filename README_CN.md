@@ -1,4 +1,4 @@
-# VolSampler: 体数据转点云采样工具
+# VolSampler: Forging Sparse Representations from Volume
 
 体数据（Volume）转点云（Point Cloud）工具。它主要用于将科学可视化的体数据（如 `.vti` 格式）通过不同的采样策略转换为点云，方便后续进行 3D Gaussian Splatting (3DGS) 训练或其他点云处理任务。
 
@@ -6,6 +6,30 @@
 
 这个项目的核心在于**模块化管道 (Pipeline)**：
 `Reader` -> `Preprocess` -> `Sampler` -> `Writer`
+## 项目结构说明
+
+本项目采用分层架构，主要模块如下：
+
+```text
+VolSampler/
+├── vol2pc/
+│   ├── core/           # [核心] 定义基础数据结构 (Volume, PointCloud) 和 Pipeline 接口
+│   ├── io/             # [IO模块] 负责文件读取 (目前支持 .vti)
+│   ├── preprocess/     # [预处理] 数据归一化 (normalize)、传输函数映射 (tf)
+│   │   ├── tf.py       # 传输函数具体实现
+│   │   └── low_level/  # 底层加速算子 (CUDA/Torch 优化实现)
+│   ├── sampling/       # [采样器] 核心采样算法
+│   │   ├── wavelet.py  # 小波采样器 (WaveletSampler)
+│   │   └── low_level/  # 小波变换底层实现 (dwt3, sparsify)
+│   ├── export/         # [导出] 负责结果写出 (目前支持 .ply)
+│   ├── cli.py          # [CLI] 命令行入口，负责解析参数和运行 Pipeline
+│   ├── config.py       # 配置加载与解析
+│   └── registry.py     # 插件注册机制
+├── configs/            # 配置文件示例 (yaml)
+├── datasets/           # 示例数据集
+├── examples/           # 演示脚本
+└── tests/              # 单元测试
+```
 
 可以自由组合不同的模块来处理数据。目前最强力的功能是基于**小波变换 (Wavelet Transform)** 的重要性采样，能够根据体数据的特征（边缘、纹理）自动分配采样点
 
@@ -27,7 +51,7 @@ pip install -e .
 
 ### 1. 命令行运行 (CLI)
 
-这是最常用的方式。你需要准备一个配置文件 (`.yaml`)。
+这是最常用的方式。你需要准备一个配置文件 (`.yaml`)。请参考 `configs/`
 
 ```bash
 python -m vol2pc.cli run -c configs/your_config.yaml
@@ -43,7 +67,7 @@ python -m vol2pc.cli run -i datasets/data.vti -c configs/your_config.yaml -o out
 
 配置文件是核心。下面是两个典型的场景：
 
-#### 场景 A：直接对密度体进行采样 (Density Only)
+#### 场景 A：基于频率分布对密度体进行采样 (Density Only), 请参考 `configs/wl_rgba.yaml`
 
 如果你只需要根据密度的变化来采样点（不带颜色，或者只看几何结构），用这个配置。注意 **不要** 加 `normalize`，除非你确定 TF 需要归一化后的输入。
 
@@ -52,9 +76,9 @@ io:
   reader: vti
 
 preprocess:
-  # 通常不需要 normalize，保留原始物理数值
-  # - name: normalize 
-  #   method: minmax
+  # 原始物理数值 -> [0,1]
+  - name: normalize 
+    method: minmax
 
 sampling:
   name: wavelet
@@ -67,7 +91,9 @@ export:
   writer: ply
 ```
 
-#### 场景 B：应用传输函数 (Transfer Function) 生成带色点云 (RGBA)
+![alt text](figures/w_supernova_rgba.png)
+
+#### 场景 B：基于频率分布对RGBA体进行采样 (TF) `configs/wl_density.yaml`
 
 这是做可视化的重点。流程是：`密度 -> TF -> RGBA -> 小波采样`。
 这样采样出来的点云不仅有位置，还有 TF 映射后的颜色和透明度。
@@ -96,7 +122,31 @@ sampling:
 
 export:
   writer: ply
+  path: results/your.ply
 ```
+![alt text](figures/w_supernova_density.png)
+
+#### 场景C：基于梯度分布对密度体进行采样 `configs/g_density.yaml`
+```
+  io:
+    reader: vti
+    path: datasets/supernova_432x432x432_float32x.vti
+
+  preprocess:
+    - name: normalize
+      method: minmax
+
+  sampling:
+    name: gradient
+    n_points: 100000
+
+  export:
+    writer: ply
+    path: results/supernova_density_gradient.ply
+
+```
+
+![alt text](figures/g_supernova_density.png)
 
 ### TF JSON 格式说明
 
@@ -113,22 +163,86 @@ export:
 ```
 每一行是 `[Scalar_Value, R, G, B, Alpha]`。
 
-## 常见问题 (FAQ)
+## 如何开发新插件
 
-1.  **输出的点云全是黑的或者空的？**
-    *   检查 `preprocess` 里是不是加了 `normalize`。如果你的 TF 是针对原始数据范围设计的（比如温度 2000~5000），而你做了 minmax 归一化（变到 0~1），TF 查表就会全落在第一个控制点（通常是透明/黑色）。**把 `normalize` 去掉试试。**
-    *   检查 TF JSON 的路径是否正确。
+Vol2PC 采用了基于注册表的插件系统。所有的扩展功能（Reader, Stage, Sampler, Writer）都应通过继承基类并注册来实现。
 
-2.  **显存爆了 (OOM)？**
-    *   小波变换需要一定的显存。如果数据很大（比如 512^3），代码里已经做了 `chunking`（分块处理），但如果还是爆，尝试减小 `chunk_size` 或者把数据缩小一点。
 
-3.  **如何调试？**
-    *   可以使用 VS Code 的 Debug 模式，`.vscode/launch.json` 我已经配好了，直接选 `Vol2PC: Run Pipeline` 就能跑。
 
-## 代码结构
+### 1. 继承基类
 
-*   `vol2pc/sampling/wavelet.py`: 小波采样的核心逻辑。
-*   `vol2pc/preprocess/tf.py`: 传输函数映射逻辑。
-*   `vol2pc/preprocess/low_level/`: 底层加速算子。
+根据你要开发的功能，从 `vol2pc.core.pipeline` 导入相应的基类：
 
-有问题随时问我。
+*   `Reader`: 读取文件格式
+*   `Stage`: 预处理步骤（如归一化、滤波、TF映射）
+*   `Sampler`: 采样策略（如随机、梯度、小波）
+*   `Writer`: 导出格式
+
+### 2. 实现核心逻辑
+
+以开发一个新的 `MySampler` 为例：
+
+```python
+from typing import Dict, Any
+from vol2pc.core.types import Volume, PointCloud
+from vol2pc.core.pipeline import Sampler
+from vol2pc.registry import register_sampler
+
+class MySampler(Sampler):
+    def sample(self, vol: Volume, cfg: Dict[str, Any]) -> PointCloud:
+        # 获取配置参数
+        n_points = cfg.get("n_points", 1000)
+        
+        # 实现采样逻辑...
+        # 注意：vol.data 可能是 (Z,Y,X) 单通道，也可能是 (4,Z,Y,X) RGBA
+        
+        # 返回 PointCloud 对象
+        return PointCloud(xyz=xyz_coords, attrs={"color": colors})
+
+# 3. 注册插件
+# 这一步非常重要！只有注册了，CLI 才能通过名字找到它。
+register_sampler("my_sampler", MySampler)
+```
+
+### 3. 启用插件
+
+确保你的新文件被导入。通常在 `vol2pc/<subpackage>/__init__.py` 中添加 `from .my_sampler import MySampler` 即可，系统会自动扫描并注册。
+
+---
+
+## TODO List
+
+### TODO 1: 梯度采样器的 RGBA 版本支持
+
+**现状**：
+目前的 `GradientSampler` (`vol2pc/sampling/gradient.py`) 仅支持单通道密度体采样。如果输入经过了 `tf` 预处理变成了 RGBA (4通道) 数据，它会报错或者行为不正确。
+
+**任务**：
+1.  修改 `GradientSampler.sample` 方法。
+2.  增加对 `vol.data` 维度的检查：如果是 4D (C, Z, Y, X)，需要先计算梯度的模长（可以对 RGBA 的 luminance 或者 alpha 通道求梯度，或者综合各通道梯度）。
+3.  在采样得到坐标后，如果输入是 RGBA，需要像 `WaveletSampler` 那样使用 `grid_sample` 插值出对应点的颜色值，并存入 `PointCloud.attrs`。
+
+### TODO 2: 预处理中的坐标归一化 (Coordinate Normalization Stage)
+
+**现状**：
+目前我们输出的点云坐标通常是基于体素索引（Index Space）转换来的物理坐标（World Space）。但在某些渲染引擎（如 3DGS 查看器）中，通常要求坐标在单位立方体 `[-1, 1]` 或 `[0, 1]` 之间。
+
+**任务**：
+1.  在 `vol2pc/preprocess/` 下新建一个 `coord.py`。
+2.  实现 `CoordNormalizeStage`。
+3.  逻辑：读取 `vol.origin` 和 `vol.spacing` 以及 `vol.shape`，计算出包围盒 (Bounding Box)，然后修改 `vol.origin` 和 `vol.spacing`，使得整个体数据被缩放到指定的范围内（如 `[-1, 1]`）。
+4.  注意：这个 Stage 改变的是元数据（Metadata），而不一定是体素数据本身（Data）。但如果后续流程依赖元数据转坐标，结果就会自动归一化。
+
+### TODO 3: Export 阶段的坐标归一化
+
+**现状**：
+希望能在最后导出 PLY 时强制归一化。配适下游FF 
+
+**任务**：
+1.  修改 `vol2pc/export/write_ply.py` 中的 `PLYWriter`。
+2.  在 `config` 中增加一个参数，例如 `normalize_coords: true`。
+3.  如果在写出时该参数为真，则计算点云的重心和尺度，将其平移缩放到单位球或单位立方体内，然后再写入文件。
+
+
+
+
