@@ -1,0 +1,6 @@
+numpy==1.23.3
+torch==2.0.1
+ptwt==0.1.9
+typer==0.23.2
+PyYAML==6.0.3
+vtk==9.5.2
