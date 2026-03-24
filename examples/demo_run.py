@@ -2,15 +2,15 @@ import sys
 import os
 import numpy as np
 
-# Add root to path so we can import vol2pc without installation
+# Add root to path so we can import vol2splat without installation
 # Since we are in examples/, we need to go up one level
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2pc import registry
-from vol2pc.core.pipeline import Reader, run_pipeline
-from vol2pc.core.types import Volume
-from vol2pc.config import Config
-from vol2pc import register_builtin_plugins
+from vol2splat import registry
+from vol2splat.core.pipeline import Reader, run_pipeline
+from vol2splat.core.types import Volume
+from vol2splat.config import Config
+from vol2splat import register_builtin_plugins
 
 # Define a Dummy Reader for testing
 class DummyReader(Reader):
@@ -53,7 +53,7 @@ def main():
             }
         ],
         "sampling": {
-            "name": "gradient",
+            "name": "density",
             "n_points": 5000
         },
         "export": {

@@ -37,6 +37,9 @@ def resolve_tf_json_paths(cfg: Dict) -> List[str]:
     if render_output_dir:
         return discover_tf_json_paths(render_output_dir)
     if isinstance(render_result, dict):
+        tf_outputs = render_result.get("tf_outputs")
+        if tf_outputs:
+            return [os.path.abspath(item["tf_json"]) for item in tf_outputs]
         tf_configs = render_result.get("tf_configs")
         if tf_configs:
             return [os.path.abspath(path) for path in tf_configs]
@@ -66,7 +69,6 @@ def resolve_tf_json_path(cfg: Dict) -> str:
         candidates = ", ".join(os.path.basename(os.path.dirname(path)) for path in paths)
         raise ValueError(f"Multiple transfer functions found. Please specify 'tf_name' or 'tf_index'. Candidates: {candidates}")
     return paths[0]
-
 
 def resolve_render_world_transform(cfg: Dict):
     direct = cfg.get("render_world_transform")

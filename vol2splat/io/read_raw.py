@@ -50,6 +50,7 @@ class RawReader(Reader):
         if order == "zyx":
             data_zyx = data.reshape(shape)
         elif order == "xyz":
+            # If the user provides RAW shape/order in XYZ, convert to the project-wide ZYX numpy contract.
             data_xyz = data.reshape(shape)
             data_zyx = np.transpose(data_xyz, (2, 1, 0))
         else:
@@ -64,6 +65,10 @@ class RawReader(Reader):
                 "dtype": str(dtype),
                 "endian": endian,
                 "order": order,
+                "axis_convention": {
+                    "data": "zyx",
+                    "spacing_origin": "xyz",
+                },
             },
         )
         return Volume(

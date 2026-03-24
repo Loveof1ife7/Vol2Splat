@@ -31,10 +31,12 @@ class NiftiReader(Reader):
     def read(self, path: str, **kwargs) -> Volume:
         if nib is not None:
             img = nib.load(path)
+            # NIfTI arrays are interpreted as XYZ here, then converted to the project-wide ZYX numpy contract.
             data_xyz = np.asarray(img.get_fdata(dtype=np.float32))
             if data_xyz.ndim != 3:
                 raise ValueError(f"NIfTI reader expects 3D scalar volume, got shape {data_xyz.shape}")
             data_zyx = np.transpose(data_xyz, (2, 1, 0))
+            # spacing/origin/direction remain in XYZ order even though the numpy array is ZYX.
             spacing, origin, direction = _affine_to_spacing_origin_direction(img.affine)
             metadata = Metadata(
                 source_path=os.path.abspath(path),
@@ -42,6 +44,11 @@ class NiftiReader(Reader):
                 extra={
                     "reader": "nii",
                     "shape_xyz": list(data_xyz.shape),
+                    "shape_zyx": list(data_zyx.shape),
+                    "axis_convention": {
+                        "data": "zyx",
+                        "spacing_origin": "xyz",
+                    },
                     "affine": np.asarray(img.affine, dtype=np.float64).tolist(),
                 },
             )
@@ -76,7 +83,16 @@ class NiftiReader(Reader):
         metadata = Metadata(
             source_path=os.path.abspath(path),
             original_dtype=str(data_zyx.dtype),
-            extra={"reader": "nii", "shape_xyz": list(dims), "backend": "vtk"},
+            extra={
+                "reader": "nii",
+                "shape_xyz": list(dims),
+                "shape_zyx": list(data_zyx.shape),
+                "axis_convention": {
+                    "data": "zyx",
+                    "spacing_origin": "xyz",
+                },
+                "backend": "vtk",
+            },
         )
         return Volume(
             data=data_zyx,
@@ -86,6 +102,4 @@ class NiftiReader(Reader):
             metadata=metadata,
         )
 
-
 register_reader("nii", NiftiReader)
-register_reader("nii.gz", NiftiReader)

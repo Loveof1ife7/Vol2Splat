@@ -45,6 +45,19 @@ def _resolve_tf_sampling_tasks(sampler_name: str, sampler_params: Dict[str, Any]
     explicit_selector = any(sampler_params.get(key) is not None for key in ['tf_json', 'tf_config', 'tf_config_json', 'tf_name', 'tf_index'])
     if (sampler_name != 'opacity' and not bool(sampler_params.get('sample_all_tf', False))) or explicit_selector:
         return [dict(sampler_params)]
+    render_result = sampler_params.get('render_result')
+    if isinstance(render_result, dict):
+        tf_outputs = render_result.get('tf_outputs') or []
+        if len(tf_outputs) > 1:
+            tasks = []
+            for item in tf_outputs:
+                task = dict(sampler_params)
+                task['tf_json'] = item['tf_json']
+                task['tf_name'] = item['tf_name']
+                task['tf_output_dir'] = item['tf_dir']
+                task.pop('tf_index', None)
+                tasks.append(task)
+            return tasks
     try:
         from ..sampling.utils import resolve_tf_json_paths
         tf_paths = resolve_tf_json_paths(sampler_params)
@@ -57,6 +70,7 @@ def _resolve_tf_sampling_tasks(sampler_name: str, sampler_params: Dict[str, Any]
         task = dict(sampler_params)
         task['tf_json'] = tf_path
         task['tf_name'] = os.path.basename(os.path.dirname(tf_path))
+        task['tf_output_dir'] = os.path.dirname(tf_path)
         task.pop('tf_index', None)
         tasks.append(task)
     return tasks
@@ -66,8 +80,17 @@ def _resolve_export_path_for_task(base_path: str | None, writer_name: str, sampl
     if not multi_tf_mode:
         return base_path
     tf_name = sampler_task.get('tf_name')
+    tf_output_dir = sampler_task.get('tf_output_dir')
     if not tf_name:
         return base_path
+    if tf_output_dir:
+        if base_path:
+            _, file_name = os.path.split(base_path)
+            root, ext = os.path.splitext(file_name)
+            if ext:
+                return os.path.join(tf_output_dir, file_name)
+            return os.path.join(tf_output_dir, _default_export_filename(writer_name))
+        return os.path.join(tf_output_dir, _default_export_filename(writer_name))
     if base_path:
         parent_dir, file_name = os.path.split(base_path)
         root, ext = os.path.splitext(file_name)
@@ -130,7 +153,10 @@ def run_pipeline(input_path: str, output_path: str, config: Any) -> PointCloud:
     last_pc = None
     for task in sampling_tasks:
         label = task.get('tf_name')
+        tf_json = task.get('tf_json')
         print(f"Sampling using {sampler_name}{' (' + label + ')' if label else ''}...")
+        if tf_json:
+            print(f"Using transfer function: {tf_json}")
         if canonical_vti_path:
             task.setdefault('canonical_vti_path', canonical_vti_path)
             try:

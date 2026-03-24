@@ -38,8 +38,62 @@ datasets/**/*.nii
 datasets/**/*.mhd
 datasets/**/*.raw
 datasets/**/*.npy
+raw/**/.nii.gz
+# 医学影像格式
+*.nii
+*.nii.gz
+*.gz
+*.mhd
+*.mha
+*.dcm
+*.dicom
+
+# NumPy 数据文件
+*.npy
+*.npz
+
+# 原始数据格式
+*.raw
+*.bin
+*.dat
+
+# 其他数据文件
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.joblib
+
+# 缓存和临时文件
+*.cache
+*.tmp
+*.temp
+
+# 数据目录（如果数据在特定文件夹）
+data/
+datasets/
+input/
+output/
+checkpoints/
+logs/
+wandb/
+*.log
+
+# 大型模型文件
+*.pt
+*.pth
+*.ckpt
+*.model
+
+# 渲染输出
+renders/
+results/
+*.png
+*.jpg
+*.mp4
 
 # Temporary files
 tmp/
 *.tmp
 *.bak
+

@@ -58,6 +58,7 @@ class VTIReader(Reader):
         if flat.size != dims[0] * dims[1] * dims[2]:
             raise ValueError(f"Unexpected scalar size {flat.size} for dimensions {dims}")
 
+        # VTK image data is treated as XYZ on read, then converted to the project-wide ZYX numpy layout.
         data_xyz = flat.reshape(dims, order="F")
         data_zyx = np.transpose(data_xyz, (2, 1, 0))
 
@@ -68,6 +69,11 @@ class VTIReader(Reader):
                 "reader": "vti",
                 "array_name": scalars.GetName() or array_name or "Scalars",
                 "dims_xyz": list(dims),
+                "shape_zyx": list(data_zyx.shape),
+                "axis_convention": {
+                    "data": "zyx",
+                    "spacing_origin": "xyz",
+                },
             },
         )
         return Volume(

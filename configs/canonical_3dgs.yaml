@@ -1,19 +1,21 @@
 io:
   reader: nii
-  path: datasets/example.nii.gz
+  path: raw/s0000/ct.nii.gz
 
 preprocess:
   - name: canonicalize
     backend: torch
     target_spacing: 1.0
+    # default behavior:
+    # 1. min-max normalize scalar volume to [0,1]
+    # 2. pad with 0 after normalization
     pad_to_cube: true
-    cube_size: 256
     write_vti: true
-    vti_path: outputs/example/canonical.vti
+    vti_path: outputs/s0000/s0000_ct_canonical.vti
 
 render:
   renderer: pv_engine
-  path: outputs/example
+  path: outputs/s0000/
   executable: pvpython
   num: 64
   w: 800
@@ -22,7 +24,7 @@ render:
   test_num: 10
   radius_scale: 0.8
   scene_bbox_size: 2.6
-  cmaps: Fast
+  cmaps: Cool to Warm
   band_count: 10
   shading: 0
   opaque_unit: 1.5
@@ -38,4 +40,4 @@ sampling:
 
 export:
   writer: ply
-  path: outputs/example/points.ply
+  path: outputs/s0000/

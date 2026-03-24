@@ -24,12 +24,16 @@ class PVEngineRenderer(Renderer):
         existing_pythonpath = env.get('PYTHONPATH')
         env['PYTHONPATH'] = repo_root if not existing_pythonpath else f'{repo_root}:{existing_pythonpath}'
         subprocess.run(cmd, check=True, env=env, cwd=repo_root)
-        tf_configs = self._discover_tf_configs(out_dir)
+        tf_outputs = self._discover_tf_outputs(out_dir)
+        tf_configs = [item['tf_json'] for item in tf_outputs]
         render_world_transform = self._compute_render_world_transform(canonical_vti_path, float(kwargs.get('scene_bbox_size', 2.6)))
         return {
             'output_dir': out_dir,
             'canonical_vti_path': canonical_vti_path,
+            'tf_outputs': tf_outputs,
             'tf_configs': tf_configs,
+            'primary_tf_json': tf_configs[0] if len(tf_configs) == 1 else None,
+            'tf_count': len(tf_configs),
             'render_world_transform': render_world_transform,
             'command': cmd,
             'runner_script': runner_script,
@@ -43,7 +47,7 @@ class PVEngineRenderer(Renderer):
         for key, value in kwargs.items():
             if value is None:
                 continue
-            flag = f"--{key.replace('_', '-')}"
+            flag = f"--{key}"
             if isinstance(value, bool):
                 if value:
                     flags.append(flag)
@@ -54,13 +58,26 @@ class PVEngineRenderer(Renderer):
             flags.extend([flag, str(value)])
         return flags
 
-    def _discover_tf_configs(self, out_dir: str) -> List[str]:
+    def _discover_tf_outputs(self, out_dir: str) -> List[Dict[str, str]]:
+        outputs: List[Dict[str, str]] = []
+
         direct = os.path.join(out_dir, 'tf_config.json')
-        tf_configs: List[str] = []
         if os.path.exists(direct):
-            tf_configs.append(os.path.abspath(direct))
-        tf_configs.extend(sorted(os.path.abspath(path) for path in glob(os.path.join(out_dir, 'TF*', 'tf_config.json'))))
-        return tf_configs
+            outputs.append({
+                'tf_name': os.path.basename(os.path.abspath(out_dir)),
+                'tf_json': os.path.abspath(direct),
+                'tf_dir': os.path.abspath(out_dir),
+            })
+
+        for path in sorted(glob(os.path.join(out_dir, 'TF*', 'tf_config.json'))):
+            tf_json = os.path.abspath(path)
+            tf_dir = os.path.dirname(tf_json)
+            outputs.append({
+                'tf_name': os.path.basename(tf_dir),
+                'tf_json': tf_json,
+                'tf_dir': tf_dir,
+            })
+        return outputs
 
     def _compute_render_world_transform(self, canonical_vti_path: str, scene_bbox_size: float):
         try:

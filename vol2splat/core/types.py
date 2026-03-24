@@ -20,6 +20,17 @@ class CanonicalVolumeArtifact:
 
 class Volume:
     def __init__(self, data: np.ndarray, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0), direction=None, metadata: Optional[Metadata] = None):
+        """
+        Axis convention used across the project:
+
+        - numpy scalar volume: (Z, Y, X)
+        - numpy RGBA volume: (4, Z, Y, X)
+        - spacing/origin: (X, Y, Z)
+        - direction: 3x3 matrix in XYZ basis
+        - index_to_world/world_to_index input: (x_idx, y_idx, z_idx)
+
+        So data access uses `data[z, y, x]`, while physical metadata stays in XYZ order.
+        """
         self.data = data
         self.spacing = np.array(spacing, dtype=np.float64)
         self.origin = np.array(origin, dtype=np.float64)
@@ -32,12 +43,14 @@ class Volume:
         return self.data.shape
 
     def index_to_world(self, ijk: np.ndarray) -> np.ndarray:
+        # `ijk` is always interpreted as (x_idx, y_idx, z_idx).
         ijk = np.asarray(ijk, dtype=np.float64)
         scaled_indices = ijk * self.spacing
         rotated = scaled_indices @ self.direction.T
         return rotated + self.origin
 
     def world_to_index(self, xyz: np.ndarray) -> np.ndarray:
+        # `xyz` and the returned indices both follow XYZ order.
         xyz = np.asarray(xyz, dtype=np.float64)
         centered = xyz - self.origin
         inv_direction = np.linalg.inv(self.direction)
