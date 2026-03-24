@@ -65,9 +65,12 @@ This transform is applied consistently to:
 - the volume display in ParaView
 - the scene bounds used for camera generation
 - the exported camera matrices
-- the point cloud export stage through pipeline metadata
+- the sampling stage and the point cloud export stage through pipeline metadata
 
 So rendered RGB, exported poses, and exported point clouds all live in the same world.
+
+This means normalization is not only about cameras.
+The actual rendered volume actor is also placed in target bbox world.
 
 ## Why `pvpython` is launched as a subprocess
 

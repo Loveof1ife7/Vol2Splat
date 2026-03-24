@@ -13,6 +13,8 @@ def ensure_parent_dir(path: str) -> None:
 
 def point_cloud_xyz_for_export(pc: PointCloud, **kwargs) -> np.ndarray:
     xyz = np.asarray(pc.xyz, dtype=np.float32)
+    if getattr(pc, "world_space", None) == "render_world":
+        return xyz
     if kwargs.get("apply_render_world", True):
         transform = kwargs.get("render_world_transform")
         if transform:

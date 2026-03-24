@@ -2,10 +2,10 @@ import numpy as np
 
 from ..common.tf import bake_rgba_volume
 from ..core.pipeline import Sampler
-from ..core.types import PointCloud, Volume
+from ..core.types import Metadata, PointCloud, Volume
 from ..io.read_vti import VTIReader
 from ..registry import register_sampler
-from .utils import resolve_tf_json_path
+from .utils import maybe_to_render_world, resolve_tf_json_path
 
 
 class OpacitySampler(Sampler):
@@ -44,6 +44,7 @@ class OpacitySampler(Sampler):
         z_idx, y_idx, x_idx = np.unravel_index(indices, alpha.shape)
         ijk = np.column_stack((x_idx, y_idx, z_idx)).astype(np.float32)
         xyz = vol.index_to_world(ijk).astype(np.float32)
+        xyz, render_world_applied = maybe_to_render_world(xyz, cfg)
 
         scalar = np.asarray(vol.data if vol.data.ndim == 3 else rgba[3], dtype=np.float32)
         attrs = {
@@ -67,7 +68,15 @@ class OpacitySampler(Sampler):
             ).astype(np.float32),
             "density": scalar.reshape(-1)[indices].reshape(-1, 1).astype(np.float32),
         }
-        return PointCloud(xyz=xyz, attrs=attrs, metadata=vol.metadata)
+        metadata = Metadata(
+            source_path=vol.metadata.source_path,
+            original_dtype=vol.metadata.original_dtype,
+            units=vol.metadata.units,
+            extra=dict(vol.metadata.extra),
+        )
+        pc = PointCloud(xyz=xyz, attrs=attrs, metadata=metadata)
+        pc.world_space = "render_world" if render_world_applied else "canonical_world"
+        return pc
 
 
 register_sampler("opacity", OpacitySampler)

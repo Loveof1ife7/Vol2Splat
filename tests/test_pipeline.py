@@ -6,10 +6,10 @@ import numpy as np
 # Add root to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2pc import registry, register_builtin_plugins
-from vol2pc.core.pipeline import Reader, run_pipeline
-from vol2pc.core.types import Volume
-from vol2pc.config import Config
+from vol2splat import registry, register_builtin_plugins
+from vol2splat.core.pipeline import Reader, run_pipeline
+from vol2splat.core.types import Volume
+from vol2splat.config import Config
 
 class DummyReader(Reader):
     def read(self, path: str, **kwargs) -> Volume:

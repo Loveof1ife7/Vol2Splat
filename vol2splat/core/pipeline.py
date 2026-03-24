@@ -108,6 +108,8 @@ def run_pipeline(input_path: str, output_path: str, config: Any) -> PointCloud:
         sampler_params.setdefault('render_result', render_result)
         if isinstance(render_result, dict) and render_result.get('output_dir'):
             sampler_params.setdefault('render_output_dir', render_result['output_dir'])
+        if isinstance(render_result, dict) and render_result.get('render_world_transform'):
+            sampler_params.setdefault('render_world_transform', render_result['render_world_transform'])
     sampler = get_sampler(sampler_name)()
     sampling_tasks = _resolve_tf_sampling_tasks(sampler_name, sampler_params)
     multi_tf_mode = len(sampling_tasks) > 1

@@ -63,8 +63,9 @@ def get_writer(name: str) -> Type[Writer]:
 
 def register_builtin_plugins():
     logger.info('Loading built-in plugins...')
+    package_root = __name__.split('.')[0]
     for module_name in ['io', 'preprocess', 'rendering', 'sampling', 'export']:
         try:
-            __import__(f'vol2splat.{module_name}')
+            __import__(f'{package_root}.{module_name}')
         except Exception as e:
             logger.error(f'Failed to load {module_name} plugins: {e}')

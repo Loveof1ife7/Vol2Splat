@@ -6,9 +6,9 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2pc.core.types import Volume
-from vol2pc.preprocess.tf import TransferFunctionStage
-from vol2pc.sampling.wavelet import WaveletSampler
+from vol2splat.core.types import Volume
+from vol2splat.preprocess.tf import TransferFunctionStage
+from vol2splat.sampling.wavelet import WaveletSampler
 
 class TestTFAndWavelet(unittest.TestCase):
     def test_tf_gaussian(self):

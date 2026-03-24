@@ -2,6 +2,8 @@ import os
 from glob import glob
 from typing import Dict, List
 
+from ..common.spatial import apply_uniform_world_transform
+
 try:
     import torch
 except Exception:
@@ -64,3 +66,20 @@ def resolve_tf_json_path(cfg: Dict) -> str:
         candidates = ", ".join(os.path.basename(os.path.dirname(path)) for path in paths)
         raise ValueError(f"Multiple transfer functions found. Please specify 'tf_name' or 'tf_index'. Candidates: {candidates}")
     return paths[0]
+
+
+def resolve_render_world_transform(cfg: Dict):
+    direct = cfg.get("render_world_transform")
+    if direct:
+        return direct
+    render_result = cfg.get("render_result")
+    if isinstance(render_result, dict):
+        return render_result.get("render_world_transform")
+    return None
+
+
+def maybe_to_render_world(xyz, cfg: Dict):
+    transform = resolve_render_world_transform(cfg)
+    if not transform:
+        return xyz, False
+    return apply_uniform_world_transform(xyz, transform), True

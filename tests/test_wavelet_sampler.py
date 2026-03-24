@@ -7,8 +7,8 @@ import torch
 # Ensure package import
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2pc.sampling.wavelet import WaveletSampler
-from vol2pc.core.types import Volume
+from vol2splat.sampling.wavelet import WaveletSampler
+from vol2splat.core.types import Volume
 
 class TestWaveletSampler(unittest.TestCase):
     def test_sample_shapes_and_attrs(self):

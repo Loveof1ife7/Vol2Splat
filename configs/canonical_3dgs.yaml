@@ -28,7 +28,6 @@ render:
   opaque_unit: 1.5
   fxaa: 1
   tf_mode: linear
-  gradient: true
   index: true
 
 sampling:

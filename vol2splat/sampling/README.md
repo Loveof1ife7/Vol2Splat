@@ -4,7 +4,7 @@ This module converts canonical volumes into point clouds.
 
 ## Main Idea
 
-Sampling happens after canonicalization, and often after rendering has already generated transfer functions.
+Sampling happens after canonicalization and after rendering has generated transfer functions.
 
 The sampling stage therefore supports two broad modes:
 
@@ -13,10 +13,8 @@ The sampling stage therefore supports two broad modes:
 Examples:
 
 - `density`
-- `gradient`
 - `uniform`
-- `poisson`
-- `hybrid`
+- `wavelet`
 
 These operate directly on scalar volume values or scalar-derived importance signals.
 
@@ -50,8 +48,8 @@ When opacity-aware sampling is used, the flow is:
 canonical scalar volume
   + tf_config.json
   -> bake RGBA volume
-  -> sample points
-  -> export render-world point cloud
+  -> sample points in target bbox world
+  -> export point cloud
 ```
 
 Shared TF logic lives in:
@@ -84,38 +82,23 @@ outputs/scene/TF02/points.ply
 
 ## World Contract
 
-Sampling itself may produce points in canonical world.
+Preferred project convention:
 
-Before writing final output, export can apply the same render-world transform used by the renderer:
-
-```text
-exported_xyz = canonical_xyz * scale_factor + offset
-```
-
-This keeps:
-
-- rendered images
-- camera poses
-- exported point clouds
-
-in one consistent target bbox world.
+- renderer defines target bbox world
+- sampling consumes renderer TF output
+- sampling returns point clouds directly in target bbox world
+- export mainly writes them out without doing the main normalization step
 
 ## Samplers
 
 - `density`
   Sample according to scalar magnitude distribution.
 
-- `gradient`
-  Sample high-gradient voxels to preserve edges and structures.
-
 - `uniform`
   Random baseline sampler.
 
-- `poisson`
-  Approximate blue-noise style spatial sampling.
-
-- `hybrid`
-  Combine structure-aware and random sampling.
+- `wavelet`
+  Multi-scale structure-aware sampler for canonical scalar or RGBA volume.
 
 - `opacity`
   Use TF-baked alpha as the main sampling distribution.

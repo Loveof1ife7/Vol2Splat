@@ -3,10 +3,10 @@ import sys
 import os
 import unittest
 
-# Ensure vol2pc is in path
+# Ensure vol2splat is in path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2pc.sampling.low_level.ll_wavelet import dwt3
+from vol2splat.sampling.low_level.ll_wavelet import dwt3
 
 class TestLLWavelet(unittest.TestCase):
     def test_dwt3_structure(self):
