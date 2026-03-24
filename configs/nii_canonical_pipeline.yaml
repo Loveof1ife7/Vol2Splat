@@ -1,0 +1,20 @@
+io:
+  reader: nii
+  path: datasets/example.nii.gz
+
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    pad_to_cube: true
+    cube_size: 256
+    write_vti: true
+    vti_path: outputs/example/canonical.vti
+
+sampling:
+  name: density
+  n_points: 50000
+
+export:
+  writer: ply
+  path: outputs/example/points.ply

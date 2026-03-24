@@ -1,0 +1,42 @@
+io:
+  reader: nii
+  path: datasets/example.nii.gz
+
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    pad_to_cube: true
+    cube_size: 256
+    write_vti: true
+    vti_path: outputs/example/canonical.vti
+
+render:
+  renderer: pv_engine
+  path: outputs/example
+  executable: pvpython
+  num: 64
+  w: 800
+  h: 800
+  vfov: 45
+  test_num: 10
+  radius_scale: 0.8
+  scene_bbox_size: 2.6
+  cmaps: Fast
+  band_count: 10
+  shading: 0
+  opaque_unit: 1.5
+  fxaa: 1
+  tf_mode: linear
+  gradient: true
+  index: true
+
+sampling:
+  name: opacity
+  n_points: 50000
+  tf_backend: torch
+  tf_device: cuda
+
+export:
+  writer: ply
+  path: outputs/example/points.ply
