@@ -19,6 +19,16 @@ except Exception:
     Image = None
 
 try:
+    import torch
+except Exception:
+    torch = None
+
+try:
+    from monai.networks.nets import UNet
+except Exception:
+    UNet = None
+
+try:
     import vtk  # noqa: F401
 except Exception:
     vtk = None
@@ -95,6 +105,71 @@ class TestBatchQCTiles(unittest.TestCase):
             self.assertIn("TF02", report["failed_tf_names"])
             self.assertTrue(os.path.exists(report["report_json"]))
             self.assertTrue(os.path.exists(report["report_md"]))
+
+    @unittest.skipIf(Image is None or torch is None or UNet is None, "Pillow, torch and monai are required for segmentation QC test")
+    def test_render_qc_with_monai_segmentation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model = UNet(
+                spatial_dims=2,
+                in_channels=4,
+                out_channels=2,
+                channels=(4, 8),
+                strides=(1,),
+            ).eval()
+            model_path = os.path.join(tmpdir, "dummy_monai_unet.pt")
+            torch.save(model.state_dict(), model_path)
+
+            bright_dir = os.path.join(tmpdir, "TF01", "train")
+            dark_dir = os.path.join(tmpdir, "TF02", "train")
+            os.makedirs(bright_dir, exist_ok=True)
+            os.makedirs(dark_dir, exist_ok=True)
+
+            bright = np.zeros((16, 16, 4), dtype=np.uint8)
+            bright[:, :8, :3] = 255
+            bright[:, :, 3] = 255
+            dark = np.zeros((16, 16, 4), dtype=np.uint8)
+            dark[:, :, 3] = 255
+            Image.fromarray(bright).save(os.path.join(bright_dir, "r_0000.png"))
+            Image.fromarray(dark).save(os.path.join(dark_dir, "r_0000.png"))
+
+            tf01_json = os.path.join(tmpdir, "TF01", "tf_config.json")
+            tf02_json = os.path.join(tmpdir, "TF02", "tf_config.json")
+            with open(tf01_json, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            with open(tf02_json, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+
+            report = run_render_qc(
+                {
+                    "output_dir": tmpdir,
+                    "tf_outputs": [
+                        {"tf_name": "TF01", "tf_json": tf01_json, "tf_dir": os.path.dirname(tf01_json)},
+                        {"tf_name": "TF02", "tf_json": tf02_json, "tf_dir": os.path.dirname(tf02_json)},
+                    ],
+                },
+                {
+                    "enabled": True,
+                    "skip_failed_tf": True,
+                    "segmentation": {
+                        "enabled": True,
+                        "backend": "monai_unet",
+                        "model_path": model_path,
+                        "device": "cpu",
+                        "input_size": [16, 16],
+                        "in_channels": 4,
+                        "out_channels": 2,
+                        "channels": [4, 8],
+                        "strides": [1],
+                        "mask_threshold": 0.5,
+                        "min_confidence": 0.5,
+                        "min_foreground_ratio": 0.1,
+                        "min_detected_frames": 1,
+                        "min_detected_ratio": 0.5,
+                    },
+                },
+            )
+            self.assertEqual(report["items"][0]["metrics"]["segmentation"]["backend"], "monai_unet")
+            self.assertIn("segmentation", report["items"][0]["metrics"])
 
     @unittest.skipIf(vtk is None, "vtk is required for tile export test")
     def test_io_tiling_writes_tiles(self):
