@@ -3,6 +3,7 @@ import numpy as np
 
 from ..core.pipeline import Reader
 from ..core.types import Metadata, Volume
+from .tiling import maybe_tile_input_volume
 from ..registry import register_reader
 
 
@@ -71,13 +72,14 @@ class RawReader(Reader):
                 },
             },
         )
-        return Volume(
+        vol = Volume(
             data=data_zyx,
             spacing=spacing,
             origin=origin,
             direction=direction,
             metadata=metadata,
         )
+        return maybe_tile_input_volume(vol, kwargs)
 
 
 register_reader("raw", RawReader)

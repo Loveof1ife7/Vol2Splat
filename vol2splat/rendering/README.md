@@ -112,6 +112,10 @@ Important outputs:
 - PNG images
   Rendered training data for downstream models.
 
+- `render_qc.json` / `render_qc.md`
+  Optional post-render quality-control reports.
+  They summarize which TF folders look valid and which ones are likely empty, too dark, or low-contrast.
+
 ## Typical Flow
 
 ```text

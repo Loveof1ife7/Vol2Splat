@@ -1,28 +1,25 @@
 io:
   reader: nii
-  path: raw/s0000/ct.nii.gz
-  # optional: split very large input volume before preprocess
+  path: raw/{case_id}/ct.nii.gz
+  # optional: input tiling for huge source volumes
   # tiling:
   #   enabled: true
   #   tile_size: 512
   #   tile_stride: 512
   #   write_tiles: true
-  #   output_dir: outputs/s0000/input_tiles
+  #   output_dir: outputs/{case_id}/input_tiles
 
 preprocess:
   - name: canonicalize
     backend: torch
     target_spacing: 1.0
-    # default behavior:
-    # 1. min-max normalize scalar volume to [0,1]
-    # 2. pad with 0 after normalization
     pad_to_cube: true
     write_vti: true
-    vti_path: outputs/s0000/s0000_ct_canonical.vti
+    vti_path: outputs/{case_id}/{input_stem}_canonical.vti
 
 render:
   renderer: pv_engine
-  path: outputs/s0000/
+  path: outputs/{case_id}
   executable: pvpython
   num: 64
   w: 800
@@ -38,14 +35,13 @@ render:
   fxaa: 1
   tf_mode: linear
   index: true
-  # optional: render QC
-  # qc:
-  #   enabled: true
-  #   skip_failed_tf: true
-  #   min_nonzero_ratio: 0.01
-  #   min_mean_intensity: 0.01
-  #   min_intensity_std: 0.005
-  
+  qc:
+    enabled: true
+    skip_failed_tf: true
+    min_nonzero_ratio: 0.01
+    min_mean_intensity: 0.01
+    min_intensity_std: 0.005
+
 sampling:
   name: opacity
   n_points: 50000
@@ -54,4 +50,4 @@ sampling:
 
 export:
   writer: ply
-  path: outputs/s0000/
+  path: outputs/{case_id}

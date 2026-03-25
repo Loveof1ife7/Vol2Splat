@@ -101,20 +101,19 @@ class Config:
                 raise
             raise ConfigError(f'Failed to parse config: {e}')
 
-def load_config(path: str) -> Config:
+def load_config_data(path: str) -> Dict[str, Any]:
     try:
         with open(path, 'r', encoding='utf-8') as f:
             if path.endswith('.json'):
-                data = json.load(f)
+                return json.load(f)
             elif path.endswith('.yaml') or path.endswith('.yml'):
                 if yaml is None:
                     raise ConfigError('PyYAML is required to load YAML config files')
-                data = yaml.safe_load(f)
+                return yaml.safe_load(f)
             else:
                 if yaml is None:
                     raise ConfigError('PyYAML is required to load non-JSON config files')
-                data = yaml.safe_load(f)
-        return Config.from_dict(data)
+                return yaml.safe_load(f)
     except FileNotFoundError:
         raise ConfigError(f'Config file not found: {path}')
     except json.JSONDecodeError as e:
@@ -123,3 +122,7 @@ def load_config(path: str) -> Config:
         if yaml is not None and isinstance(e, yaml.YAMLError):
             raise ConfigError(f'YAML parse error: {e}')
         raise
+
+
+def load_config(path: str) -> Config:
+    return Config.from_dict(load_config_data(path))

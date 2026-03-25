@@ -12,7 +12,6 @@ The sampling stage therefore supports two broad modes:
 
 Examples:
 
-- `density`
 - `uniform`
 - `wavelet`
 
@@ -90,9 +89,6 @@ Preferred project convention:
 - export mainly writes them out without doing the main normalization step
 
 ## Samplers
-
-- `density`
-  Sample according to scalar magnitude distribution.
 
 - `uniform`
   Random baseline sampler.

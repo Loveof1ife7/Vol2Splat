@@ -1,4 +1,3 @@
-from .density import DensitySampler
 from .opacity import OpacitySampler
 from .uniform import UniformSampler
 
@@ -7,6 +6,6 @@ try:
 except Exception:
     WaveletSampler = None
 
-__all__ = ["DensitySampler", "OpacitySampler", "UniformSampler"]
+__all__ = ["OpacitySampler", "UniformSampler"]
 if WaveletSampler is not None:
     __all__.append("WaveletSampler")

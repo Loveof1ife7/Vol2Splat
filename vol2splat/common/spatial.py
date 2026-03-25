@@ -43,4 +43,4 @@ def apply_uniform_world_transform(xyz: np.ndarray, transform: dict) -> np.ndarra
     xyz = np.asarray(xyz, dtype=np.float32)
     scale_factor = float(transform['scale_factor'])
     offset = np.asarray(transform['offset'], dtype=np.float32).reshape(1, 3)
-    return xyz * scale_factor + offset
+    return xyz * scale_factor + offset # (xyz - center) * scale_factor

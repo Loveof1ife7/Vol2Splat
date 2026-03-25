@@ -12,6 +12,7 @@ from .utils import (
 )
 from vtk import vtkGPUVolumeRayCastMapper, vtkVolume, vtkImageData
 from vtk.util import numpy_support
+
 # from PIL import Image # 保持这个用于可视化
 class VolumeRenderer:
     """管理 ParaView 状态、流水线和渲染操作。"""
@@ -50,6 +51,7 @@ class VolumeRenderer:
         print("[Renderer] Reading data file (UpdatePipeline)...")
         UpdatePipeline() 
         print("[Renderer] Data loaded.")
+        
         # 2. 处理 CellData 到 PointData，并根据需要对向量场取模长
         self.src, self.array_name, assoc = self._setup_data_array(self.src, self.rv)
         
@@ -64,9 +66,9 @@ class VolumeRenderer:
         self.arr_min, self.arr_max = self._setup_scalar_range(self.src, args.range)
         
         # 5. 隐藏标量条
-
         self.disp.SetScalarBarVisibility(self.lut, False)
 
+        # 6. 获取体渲染范围
         raw_bounds = self.src.GetDataInformation().GetBounds()
         self.render_world_transform = compute_uniform_target_bbox_transform(
             raw_bounds,
@@ -82,7 +84,7 @@ class VolumeRenderer:
             print(f"[warn] Failed to apply render-world transform on display: {exc}")
 
             
-        # 6. 设置体渲染属性
+        # 7. 设置体渲染属性
         self.disp.Shade = int(args.shading)
         target_unit = float(self.args.opaque_unit)
 

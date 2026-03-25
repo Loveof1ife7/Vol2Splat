@@ -10,6 +10,7 @@ except Exception:
 
 from ..core.types import Metadata, Volume
 from ..core.pipeline import Reader
+from .tiling import maybe_tile_input_volume
 from ..registry import register_reader
 
 
@@ -76,13 +77,14 @@ class VTIReader(Reader):
                 },
             },
         )
-        return Volume(
+        vol = Volume(
             data=data_zyx,
             spacing=spacing,
             origin=origin,
             direction=direction,
             metadata=metadata,
         )
+        return maybe_tile_input_volume(vol, kwargs)
 
 
 register_reader("vti", VTIReader)

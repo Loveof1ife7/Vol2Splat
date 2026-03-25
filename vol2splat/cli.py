@@ -3,6 +3,7 @@ from typing import Optional
 from pathlib import Path
 import sys
 
+from .batch import run_batch
 from .core.pipeline import run_pipeline
 from .config import load_config
 from .registry import register_builtin_plugins, READERS, STAGES, SAMPLERS, WRITERS, RENDERERS, get_reader
@@ -50,6 +51,33 @@ def run(
         typer.echo(f"Error: {e}", err=True)
         # Raise to show traceback if verbose? 
         # Typer handles exceptions but we want clean exit for users
+        sys.exit(1)
+
+
+@app.command()
+def batch(
+    config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
+    raw_root: Path = typer.Option(Path("raw"), "--raw-root", help="Root directory containing case folders"),
+    output_root: Path = typer.Option(Path("outputs"), "--output-root", help="Root directory for per-case outputs"),
+    case_glob: str = typer.Option("s*", "--case-glob", help="Glob used to discover case directories"),
+    filename: Optional[str] = typer.Option(None, "--filename", help="Optional fixed input filename inside each case directory"),
+    continue_on_error: bool = typer.Option(True, "--continue-on-error/--fail-fast", help="Continue batch processing when a case fails"),
+):
+    """Run the pipeline for all discovered cases under a raw data root."""
+    try:
+        report = run_batch(
+            config_path=str(config_path),
+            raw_root=str(raw_root),
+            output_root=str(output_root),
+            case_glob=case_glob,
+            filename=filename,
+            continue_on_error=continue_on_error,
+        )
+        typer.echo(f"Batch completed. cases={report['total_cases']} ok={report['succeeded']} failed={report['failed']}")
+        if report.get("report_json"):
+            typer.echo(f"Batch report: {report['report_json']}")
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 @app.command("list")

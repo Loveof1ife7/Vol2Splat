@@ -1,5 +1,5 @@
 [project]
-name = "vol2pc"
+name = "vol2splat"
 version = "0.1.0"
 description = "Volume to Point Cloud Sampler"
 dependencies = [
@@ -13,4 +13,4 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-vol2pc = "vol2pc.cli:app"
+vol2splat = "vol2splat.cli:app"

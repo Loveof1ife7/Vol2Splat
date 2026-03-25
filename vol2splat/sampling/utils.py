@@ -80,7 +80,8 @@ def resolve_render_world_transform(cfg: Dict):
     return None
 
 
-def maybe_to_render_world(xyz, cfg: Dict):
+def apply_render_world_transform_if_present(xyz, cfg: Dict):
+    """Map sampled xyz into render world when the pipeline provides that transform."""
     transform = resolve_render_world_transform(cfg)
     if not transform:
         return xyz, False

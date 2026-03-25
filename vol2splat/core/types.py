@@ -18,6 +18,14 @@ class CanonicalVolumeArtifact:
     direction: np.ndarray
     metadata: Optional[Metadata] = None
 
+
+@dataclass
+class VolumeTile:
+    name: str
+    volume: 'Volume'
+    start_xyz: Tuple[int, int, int]
+    path: Optional[str] = None
+
 class Volume:
     def __init__(self, data: np.ndarray, spacing=(1.0, 1.0, 1.0), origin=(0.0, 0.0, 0.0), direction=None, metadata: Optional[Metadata] = None):
         """
@@ -43,7 +51,11 @@ class Volume:
         return self.data.shape
 
     def index_to_world(self, ijk: np.ndarray) -> np.ndarray:
-        # `ijk` is always interpreted as (x_idx, y_idx, z_idx).
+        '''
+        Convert indices to world coordinates.
+            `ijk` is always interpreted as (x_idx, y_idx, z_idx), for spacing = (1.0, 1.0, 1.0), direction = np.eye(3), origin = (0.0, 0.0, 0.0).
+        '''
+        # `` is always interpreted as (x_idx, y_idx, z_idx).
         ijk = np.asarray(ijk, dtype=np.float64)
         scaled_indices = ijk * self.spacing
         rotated = scaled_indices @ self.direction.T

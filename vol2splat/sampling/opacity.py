@@ -5,7 +5,7 @@ from ..core.pipeline import Sampler
 from ..core.types import Metadata, PointCloud, Volume
 from ..io.read_vti import VTIReader
 from ..registry import register_sampler
-from .utils import maybe_to_render_world, resolve_tf_json_path
+from .utils import apply_render_world_transform_if_present, resolve_tf_json_path
 
 
 class OpacitySampler(Sampler):
@@ -44,7 +44,7 @@ class OpacitySampler(Sampler):
         z_idx, y_idx, x_idx = np.unravel_index(indices, alpha.shape)
         ijk = np.column_stack((x_idx, y_idx, z_idx)).astype(np.float32)
         xyz = vol.index_to_world(ijk).astype(np.float32)
-        xyz, render_world_applied = maybe_to_render_world(xyz, cfg)
+        xyz, render_world_applied = apply_render_world_transform_if_present(xyz, cfg)
 
         scalar = np.asarray(vol.data if vol.data.ndim == 3 else rgba[3], dtype=np.float32)
         attrs = {

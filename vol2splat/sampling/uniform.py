@@ -3,7 +3,7 @@ from typing import Dict, Any
 from ..core.types import Metadata, Volume, PointCloud
 from ..core.pipeline import Sampler
 from ..registry import register_sampler
-from .utils import maybe_to_render_world
+from .utils import apply_render_world_transform_if_present
 
 class UniformSampler(Sampler):
     def sample(self, vol: Volume, cfg: Dict[str, Any]) -> PointCloud:
@@ -23,7 +23,7 @@ class UniformSampler(Sampler):
         
         # Convert to world coords
         xyz = vol.index_to_world(ijk)
-        xyz, render_world_applied = maybe_to_render_world(xyz, cfg)
+        xyz, render_world_applied = apply_render_world_transform_if_present(xyz, cfg)
         
         # Sample values (Nearest Neighbor)
         xi = np.round(x_idx).astype(int)

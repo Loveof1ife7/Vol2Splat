@@ -15,6 +15,7 @@ except Exception:
 
 from ..core.pipeline import Reader
 from ..core.types import Metadata, Volume
+from .tiling import maybe_tile_input_volume
 from ..registry import register_reader
 
 
@@ -52,13 +53,14 @@ class NiftiReader(Reader):
                     "affine": np.asarray(img.affine, dtype=np.float64).tolist(),
                 },
             )
-            return Volume(
+            vol = Volume(
                 data=data_zyx,
                 spacing=spacing,
                 origin=origin,
                 direction=direction,
                 metadata=metadata,
             )
+            return maybe_tile_input_volume(vol, kwargs)
 
         if vtk is None or vtk_to_numpy is None:
             raise ImportError("nibabel or vtk is required to read NIfTI files")
@@ -94,12 +96,14 @@ class NiftiReader(Reader):
                 "backend": "vtk",
             },
         )
-        return Volume(
+        vol = Volume(
             data=data_zyx,
             spacing=spacing,
             origin=origin,
             direction=direction,
             metadata=metadata,
         )
+        return maybe_tile_input_volume(vol, kwargs)
 
 register_reader("nii", NiftiReader)
+register_reader("nii.gz", NiftiReader)
