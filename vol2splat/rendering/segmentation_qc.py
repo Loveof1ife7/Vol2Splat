@@ -1,3 +1,6 @@
+import hashlib
+import os
+import urllib.request
 from collections import OrderedDict
 from typing import Any, Dict, List
 
@@ -109,6 +112,43 @@ def _extract_state_dict(checkpoint):
     raise ValueError("Unsupported MONAI segmentation checkpoint format")
 
 
+def _sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download_file(url: str, path: str) -> str:
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    urllib.request.urlretrieve(url, path)
+    return path
+
+
+def resolve_segmentation_model_path(cfg: Dict[str, Any]) -> str:
+    model_path = cfg.get("model_path") or cfg.get("checkpoint_path")
+    if model_path and os.path.exists(model_path):
+        return os.path.abspath(model_path)
+
+    model_url = cfg.get("model_url") or cfg.get("checkpoint_url")
+    if not model_url:
+        raise ValueError("segmentation-aware QC requires an existing 'model_path' or a downloadable 'model_url'")
+
+    download_dir = cfg.get("download_dir") or os.path.join(os.path.expanduser("~"), ".cache", "vol2splat", "segmentation_models")
+    filename = cfg.get("model_filename") or os.path.basename(model_url.split("?", 1)[0]) or "segmentation_model.pt"
+    local_path = os.path.abspath(os.path.join(download_dir, filename))
+    if not os.path.exists(local_path):
+        _download_file(model_url, local_path)
+
+    expected_sha256 = cfg.get("sha256")
+    if expected_sha256:
+        actual_sha256 = _sha256(local_path)
+        if actual_sha256.lower() != str(expected_sha256).lower():
+            raise ValueError(f"Downloaded segmentation model SHA256 mismatch: expected {expected_sha256}, got {actual_sha256}")
+    return local_path
+
+
 def _strip_common_prefixes(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     stripped = OrderedDict()
     for key, value in state_dict.items():
@@ -120,15 +160,36 @@ def _strip_common_prefixes(state_dict: Dict[str, Any]) -> Dict[str, Any]:
     return stripped
 
 
+def _add_prefix_if_missing(state_dict: Dict[str, Any], prefix: str) -> Dict[str, Any]:
+    out = OrderedDict()
+    for key, value in state_dict.items():
+        out[key if key.startswith(prefix) else f"{prefix}{key}"] = value
+    return out
+
+
+def _load_model_state_dict_flex(model, state_dict: Dict[str, Any], strict: bool = True) -> None:
+    candidates = [
+        state_dict,
+        _strip_common_prefixes(state_dict),
+        _add_prefix_if_missing(_strip_common_prefixes(state_dict), "model."),
+    ]
+    last_error = None
+    for candidate in candidates:
+        try:
+            model.load_state_dict(candidate, strict=strict)
+            return
+        except RuntimeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise last_error
+
+
 class MonaiUNetSegmentationEvaluator:
     def __init__(self, cfg: Dict[str, Any]):
         _require_runtime()
-        model_path = cfg.get("model_path") or cfg.get("checkpoint_path")
-        if not model_path:
-            raise ValueError("MONAI segmentation-aware QC requires 'model_path' or 'checkpoint_path'")
-
         self.cfg = dict(cfg)
         self.device = _resolve_device(cfg.get("device"))
+        model_path = resolve_segmentation_model_path(self.cfg)
 
         channels = tuple(int(v) for v in cfg.get("channels", (32, 64, 128, 256)))
         strides = tuple(int(v) for v in cfg.get("strides", (2, 2, 2)))
@@ -146,8 +207,8 @@ class MonaiUNetSegmentationEvaluator:
         ).to(self.device)
 
         checkpoint = torch.load(model_path, map_location=self.device)
-        state_dict = _strip_common_prefixes(_extract_state_dict(checkpoint))
-        self.model.load_state_dict(state_dict, strict=bool(cfg.get("strict", True)))
+        state_dict = _extract_state_dict(checkpoint)
+        _load_model_state_dict_flex(self.model, state_dict, strict=bool(cfg.get("strict", True)))
         self.model.eval()
 
     def _infer_single(self, image_hwc: np.ndarray) -> Dict[str, float]:
@@ -213,3 +274,19 @@ def build_segmentation_evaluator(segmentation_cfg: Dict[str, Any] | None):
     if backend not in {"monai", "monai_unet"}:
         raise ValueError(f"Unsupported segmentation QC backend: {backend}")
     return MonaiUNetSegmentationEvaluator(segmentation_cfg)
+
+
+def evaluate_segmentation_image_paths(image_paths: List[str], segmentation_cfg: Dict[str, Any], sample_limit: int | None = None) -> Dict[str, Any]:
+    if sample_limit is not None and sample_limit > 0 and len(image_paths) > sample_limit:
+        idx = np.linspace(0, len(image_paths) - 1, sample_limit).round().astype(int)
+        image_paths = [image_paths[int(i)] for i in idx]
+    rgba_images = []
+    for path in image_paths:
+        image = Image.open(path).convert("RGBA")
+        rgba_images.append(np.asarray(image, dtype=np.float32) / 255.0)
+    evaluator = build_segmentation_evaluator(segmentation_cfg)
+    if evaluator is None:
+        raise ValueError("segmentation config is missing or disabled")
+    result = evaluator.evaluate(rgba_images)
+    result["image_paths"] = [os.path.abspath(path) for path in image_paths]
+    return result

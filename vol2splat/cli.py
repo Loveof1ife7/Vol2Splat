@@ -2,12 +2,15 @@ import typer
 from typing import Optional
 from pathlib import Path
 import sys
+import json
+from glob import glob
 
 from .batch import run_batch
 from .core.pipeline import run_pipeline
-from .config import load_config
+from .config import load_config, load_config_data
 from .registry import register_builtin_plugins, READERS, STAGES, SAMPLERS, WRITERS, RENDERERS, get_reader
 from .core.log import setup_logging
+from .rendering.segmentation_qc import evaluate_segmentation_image_paths
 
 app = typer.Typer(help="Vol2Splat: Canonical volume to render/sample/export pipeline")
 
@@ -118,6 +121,47 @@ def inspect(
         typer.echo(f"Data Type: {vol.data.dtype}")
         typer.echo(f"Value Range: [{vol.data.min()}, {vol.data.max()}]")
         
+    except Exception as e:
+        typer.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@app.command("test-seg")
+def test_segmentation(
+    config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
+    tf_dir: Optional[Path] = typer.Option(None, "--tf-dir", help="TF directory such as outputs/s0000/TF01"),
+    image_glob: Optional[str] = typer.Option(None, "--image-glob", help="Glob for PNG images to test"),
+    split: str = typer.Option("train", "--split", help="Split under tf-dir to evaluate"),
+    sample_limit: int = typer.Option(12, "--sample-limit", help="Maximum number of images to evaluate"),
+    output_json: Optional[Path] = typer.Option(None, "--output-json", help="Optional output JSON path"),
+):
+    """Run MONAI segmentation QC on rendered PNGs without running the full pipeline."""
+    try:
+        config_data = load_config_data(str(config_path))
+        segmentation_cfg = (((config_data.get("render") or {}).get("qc") or {}).get("segmentation") or {})
+        if not segmentation_cfg.get("enabled", False):
+            raise ValueError("render.qc.segmentation is missing or disabled in config")
+
+        if image_glob:
+            image_paths = sorted(glob(image_glob))
+            base_dir = str(tf_dir) if tf_dir else None
+        else:
+            if tf_dir is None:
+                raise ValueError("Either --tf-dir or --image-glob is required")
+            image_paths = sorted(glob(str(tf_dir / split / "*.png")))
+            base_dir = str(tf_dir)
+        if not image_paths:
+            raise FileNotFoundError("No PNG images found for segmentation QC test")
+
+        result = evaluate_segmentation_image_paths(image_paths, segmentation_cfg, sample_limit=sample_limit)
+        typer.echo(json.dumps(result, indent=2, ensure_ascii=False))
+
+        if output_json is None and base_dir:
+            output_json = Path(base_dir) / "segmentation_test.json"
+        if output_json is not None:
+            output_json.parent.mkdir(parents=True, exist_ok=True)
+            output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+            typer.echo(f"Wrote segmentation test result to {output_json}")
     except Exception as e:
         typer.echo(f"Error: {e}", err=True)
         sys.exit(1)

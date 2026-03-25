@@ -45,6 +45,10 @@ render:
     #   enabled: true
     #   backend: monai_unet
     #   model_path: /path/to/your_monai_unet_weights.pt
+    #   # or auto-download weights:
+    #   # model_url: https://...
+    #   # download_dir: .cache/segmentation_models
+    #   # sha256: ...
     #   device: cuda
     #   input_size: [256, 256]
     #   in_channels: 4

@@ -38,6 +38,7 @@ io -> preprocess -> canonical.vti -> rendering -> sampling -> export
    渲染时使用统一的 target bbox world。
    导出的相机位姿和渲染图像在同一个 world 里。
    如果开启 QC，会在 render 完成后分析各个 `TFxx` 的图像质量，并记录哪些 TF 基本是空背景、过暗或低对比度。
+   也可以进一步接入 2D 医学分割模型；如果该模型在某个 TF 的渲染结果上稳定分割失败，就把这个 TF 视为“非有效体素获得了不透明度”。
 
 4. `sampling`
    下游只消费 canonical `.vti` 和 rendering 输出的 `tf_config.json`。
@@ -158,6 +159,14 @@ vol2splat list
 vol2splat inspect -i your_case.nii.gz -r nii
 ```
 
+对已经渲染好的 PNG 单独测试分割 QC：
+
+```bash
+vol2splat test-seg -c configs/canonical_3dgs.yaml --tf-dir outputs/s0000/TF01 --split train
+```
+
+如果 `render.qc.segmentation` 里配置了 `model_url`，权重会先自动下载到本地，再执行推理。
+
 批量处理一整个 `raw/` 目录：
 
 ```bash
@@ -198,6 +207,7 @@ vol2splat batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-roo
 - 如果原始 volume 非常大，可以在 `io.tiling` 里配置 `tile_size / tile_stride / max_voxels / max_dim`
 - renderer 只吃 canonical VTI，不直接处理原始源格式差异
 - render QC 是 render 之后、sampling 之前的自动质检层
+- render QC 可以只用图像启发式规则，也可以叠加 2D 医学分割模型
 - sampler 先消费 rendering 产出的 `tf_config.json`，再基于 RGBA volume 采样
 - sampler 的输出点云应直接位于 target bbox world
 - export 要和 rendering 使用同一套 render world，但原则上不负责二次坐标纠偏
