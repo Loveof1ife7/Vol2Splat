@@ -8,7 +8,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2splat.batch import discover_case_inputs, prepare_case_config_data
+from vol2splat.batch import assign_cases_to_batches, discover_case_inputs, prepare_case_config_data
 from vol2splat.io.tiling import maybe_tile_input_volume
 from vol2splat.rendering.qc import run_render_qc
 from vol2splat.core.types import Volume
@@ -57,12 +57,24 @@ class TestBatchQCTiles(unittest.TestCase):
                 "render": {"renderer": "pv_engine", "qc": {"enabled": True}},
                 "export": {"writer": "ply", "path": "outputs/s0000"},
             }
-            prepared = prepare_case_config_data(base_config, cases[0], output_root=os.path.join(tmpdir, "outputs"))
+            assigned = assign_cases_to_batches(cases, batch_size=1, shuffle=False)
+            prepared = prepare_case_config_data(base_config, assigned[0], output_root=os.path.join(tmpdir, "outputs"))
             self.assertEqual(prepared["io"]["path"], cases[0]["input_path"])
-            self.assertTrue(prepared["preprocess"][0]["vti_path"].endswith("s0001/ct_canonical.vti"))
-            self.assertTrue(prepared["io"]["tiling"]["output_dir"].endswith("s0001/input_tiles"))
-            self.assertTrue(prepared["render"]["path"].endswith("s0001"))
-            self.assertTrue(prepared["export"]["path"].endswith("s0001"))
+            self.assertEqual(assigned[0]["batch_id"], "batch_0001")
+            self.assertTrue(prepared["preprocess"][0]["vti_path"].endswith("batch_0001/s0001/ct_canonical.vti"))
+            self.assertTrue(prepared["io"]["tiling"]["output_dir"].endswith("batch_0001/s0001/input_tiles"))
+            self.assertTrue(prepared["render"]["path"].endswith("batch_0001/s0001"))
+            self.assertTrue(prepared["export"]["path"].endswith("batch_0001/s0001"))
+
+    def test_assign_cases_to_batches_shuffles_repeatably(self):
+        cases = [{"case_id": f"s{i:04d}", "input_name": "ct.nii.gz", "input_path": f"/tmp/s{i:04d}/ct.nii.gz", "input_stem": "ct"} for i in range(205)]
+        assigned_1 = assign_cases_to_batches(cases, batch_size=100, shuffle=True, seed=7)
+        assigned_2 = assign_cases_to_batches(cases, batch_size=100, shuffle=True, seed=7)
+        self.assertEqual([case["case_id"] for case in assigned_1], [case["case_id"] for case in assigned_2])
+        self.assertEqual(assigned_1[0]["batch_id"], "batch_0001")
+        self.assertEqual(assigned_1[99]["batch_id"], "batch_0001")
+        self.assertEqual(assigned_1[100]["batch_id"], "batch_0002")
+        self.assertEqual(assigned_1[-1]["batch_id"], "batch_0003")
 
     @unittest.skipIf(Image is None, "Pillow is required for render QC test")
     def test_render_qc_marks_dark_tf_as_failed(self):

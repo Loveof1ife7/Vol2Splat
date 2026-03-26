@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import random
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
@@ -64,6 +65,34 @@ def discover_case_inputs(raw_root: str, reader: str, case_glob: str = "s*", file
     return cases
 
 
+def assign_cases_to_batches(
+    cases: List[Dict[str, str]],
+    batch_size: int = 100,
+    shuffle: bool = True,
+    seed: int | None = 0,
+    batch_prefix: str = "batch_",
+) -> List[Dict[str, str]]:
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
+
+    assigned = [dict(case) for case in cases]
+    if shuffle:
+        rng = random.Random(seed)
+        rng.shuffle(assigned)
+
+    total_batches = (len(assigned) + batch_size - 1) // batch_size if assigned else 0
+    width = max(4, len(str(total_batches or 1)))
+    for index, case in enumerate(assigned):
+        batch_index = (index // batch_size) + 1
+        case["batch_index"] = batch_index
+        case["batch_id"] = f"{batch_prefix}{batch_index:0{width}d}"
+        case["batch_case_index"] = (index % batch_size) + 1
+        case["batch_size"] = batch_size
+        case["batch_shuffle"] = shuffle
+        case["batch_seed"] = seed
+    return assigned
+
+
 def _render_template_values(value: Any, context: Dict[str, str]) -> Any:
     if isinstance(value, str):
         return value.format_map(_SafeFormatDict(context))
@@ -75,9 +104,16 @@ def _render_template_values(value: Any, context: Dict[str, str]) -> Any:
 
 
 def prepare_case_config_data(base_config_data: Dict[str, Any], case_info: Dict[str, str], output_root: str, override_paths: bool = True) -> Dict[str, Any]:
-    case_output_dir = os.path.abspath(os.path.join(output_root, case_info["case_id"]))
+    batch_id = case_info.get("batch_id")
+    if batch_id:
+        case_output_dir = os.path.abspath(os.path.join(output_root, batch_id, case_info["case_id"]))
+        batch_output_dir = os.path.abspath(os.path.join(output_root, batch_id))
+    else:
+        case_output_dir = os.path.abspath(os.path.join(output_root, case_info["case_id"]))
+        batch_output_dir = os.path.abspath(output_root)
     context = dict(case_info)
     context["output_dir"] = case_output_dir
+    context["batch_output_dir"] = batch_output_dir
     context["canonical_vti_path"] = os.path.join(case_output_dir, f"{case_info['input_stem']}_canonical.vti")
     context["tiles_dir"] = os.path.join(case_output_dir, "tiles")
     context["export_path"] = case_output_dir
@@ -121,31 +157,71 @@ def _write_batch_reports(output_root: str, report: Dict[str, Any]) -> None:
         "# Batch Report",
         "",
         f"- total_cases: {report['total_cases']}",
+        f"- total_batches: {report.get('total_batches', 0)}",
+        f"- batch_size: {report.get('batch_size', '-')}",
+        f"- shuffle: {report.get('shuffle', '-')}",
+        f"- seed: {report.get('seed', '-')}",
         f"- succeeded: {report['succeeded']}",
         f"- failed: {report['failed']}",
         "",
-        "| Case | Status | Input | QC Failed TF | Error |",
-        "| --- | --- | --- | --- | --- |",
+        "| Batch | Case | Status | Input | QC Failed TF | Error |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for item in report["cases"]:
         qc_failed = ",".join(item.get("failed_tf_names", [])) if item.get("failed_tf_names") else "-"
         error = item.get("error", "-")
-        lines.append(f"| {item['case_id']} | {item['status']} | {item['input_name']} | {qc_failed} | {error} |")
+        lines.append(f"| {item.get('batch_id', '-')} | {item['case_id']} | {item['status']} | {item['input_name']} | {qc_failed} | {error} |")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     report["report_json"] = os.path.abspath(json_path)
     report["report_md"] = os.path.abspath(md_path)
 
 
-def run_batch(config_path: str, raw_root: str = "raw", output_root: str = "outputs", case_glob: str = "s*", filename: str | None = None, continue_on_error: bool = True, override_paths: bool = True) -> Dict[str, Any]:
+def run_batch(
+    config_path: str,
+    raw_root: str = "raw",
+    output_root: str = "outputs",
+    case_glob: str = "s*",
+    filename: str | None = None,
+    continue_on_error: bool = True,
+    override_paths: bool = True,
+    batch_size: int | None = None,
+    shuffle: bool | None = None,
+    seed: int | None = None,
+    batch_index: int | None = None,
+) -> Dict[str, Any]:
     base_config_data = load_config_data(config_path)
+    batch_cfg = base_config_data.get("batch") or {}
     reader = base_config_data.get("io", {}).get("reader", "nii")
     cases = discover_case_inputs(raw_root, reader=reader, case_glob=case_glob, filename=filename)
+    resolved_batch_size = int(batch_size if batch_size is not None else batch_cfg.get("size", 100))
+    resolved_shuffle = bool(shuffle if shuffle is not None else batch_cfg.get("shuffle", True))
+    resolved_seed = seed if seed is not None else batch_cfg.get("seed", 0)
+    selected_batch_index = batch_index if batch_index is not None else batch_cfg.get("batch_index")
+    batch_prefix = str(batch_cfg.get("prefix", "batch_"))
+    cases = assign_cases_to_batches(
+        cases,
+        batch_size=resolved_batch_size,
+        shuffle=resolved_shuffle,
+        seed=resolved_seed,
+        batch_prefix=batch_prefix,
+    )
+    total_batches = max((case["batch_index"] for case in cases), default=0)
+    if selected_batch_index is not None:
+        selected_batch_index = int(selected_batch_index)
+        cases = [case for case in cases if case["batch_index"] == selected_batch_index]
+        if not cases:
+            raise ValueError(f"Requested batch_index={selected_batch_index} but no cases were assigned to that batch")
 
     report: Dict[str, Any] = {
         "config_path": os.path.abspath(config_path),
         "raw_root": os.path.abspath(raw_root),
         "output_root": os.path.abspath(output_root),
+        "batch_size": resolved_batch_size,
+        "shuffle": resolved_shuffle,
+        "seed": resolved_seed,
+        "requested_batch_index": selected_batch_index,
+        "total_batches": total_batches,
         "total_cases": len(cases),
         "succeeded": 0,
         "failed": 0,
@@ -156,6 +232,9 @@ def run_batch(config_path: str, raw_root: str = "raw", output_root: str = "outpu
         config_data = prepare_case_config_data(base_config_data, case_info, output_root=output_root, override_paths=override_paths)
         cfg = Config.from_dict(config_data)
         entry = {
+            "batch_id": case_info.get("batch_id"),
+            "batch_index": case_info.get("batch_index"),
+            "batch_case_index": case_info.get("batch_case_index"),
             "case_id": case_info["case_id"],
             "input_name": case_info["input_name"],
             "input_path": case_info["input_path"],

@@ -1,6 +1,6 @@
 # Vol2Splat
 
-`Vol2Splat` 现在是一个面向医学体数据和科学可视化体数据的完整流水线项目。
+`Vol2Splat` 现在是一个面向Volmetric data(医学和仿真数据)自动化数据集制作项目
 
 它支持：
 
@@ -10,7 +10,7 @@
 - 导出 canonical `.vti`
 - 用 ParaView `pvpython` 渲染 canonical VTI
 - 对 render 结果做自动质检并生成报告
-- 基于 `tf_config.json` 烘焙 RGBA 再采样
+- 基于 `tf_config.json` 烘焙 RGBA Volume再采样PCD
 - 批量扫描 `raw/sXXXX` 自动化处理
 - 导出给下游 3DGS / NeRF 风格训练使用的点云
 
@@ -82,7 +82,7 @@ io -> preprocess -> canonical.vti -> rendering -> sampling -> export
 - `origin = (0, 0, 0)`
 - `direction = I`
 - 标量体默认被归一化到 `[0,1]`
-- 体素索引和体素世界位置保持一致语义
+- 体素索引和世界位置保持一致语义
 
 它是项目内部传递体数据的标准格式。
 
@@ -133,8 +133,34 @@ Vol2Splat/
 ```bash
 conda create -n data python=3.10
 conda activate data
-pip install -r requirements.txt
 pip install -e .
+```
+
+如果你想一次装全功能依赖，可以用：
+
+```bash
+pip install -e .[full]
+```
+
+如果只想补某一类能力：
+
+```bash
+pip install -e .[medical]
+pip install -e .[render]
+pip install -e .[segmentation]
+pip install -e .[wavelet]
+```
+
+`requirements.txt` 仍然保留，适合你现在这种“固定环境复现”；但日常开发和 API 安装，优先建议直接用 `pyproject.toml` 的 extras。
+
+如果你把它当 Python API 用，安装后可以直接：
+
+```python
+from vol2splat import Config, load_config, run_pipeline, register_builtin_plugins
+
+register_builtin_plugins()
+cfg = load_config("configs/canonical_3dgs.yaml")
+run_pipeline(None, None, cfg)
 ```
 
 如果要使用 ParaView 渲染，确保系统里可执行 `pvpython`。
@@ -151,18 +177,21 @@ vol2splat run -c configs/nii_canonical_pipeline.yaml
 
 ```bash
 vol2splat list
+python -m vol2splat.cli list
 ```
 
 查看体数据基本信息：
 
 ```bash
 vol2splat inspect -i your_case.nii.gz -r nii
+python -m vol2splat.cli inspect -i your_case.nii.gz -r nii
 ```
 
 对已经渲染好的 PNG 单独测试分割 QC：
 
 ```bash
 vol2splat test-seg -c configs/canonical_3dgs.yaml --tf-dir outputs/s0000/TF01 --split train
+python -m vol2splat.cli test_seg -c configs/canonical_3dgs.yaml --tf-dir outputs/s0000/TF01 --split train
 ```
 
 如果 `render.qc.segmentation` 里配置了 `model_url`，权重会先自动下载到本地，再执行推理。
@@ -171,6 +200,7 @@ vol2splat test-seg -c configs/canonical_3dgs.yaml --tf-dir outputs/s0000/TF01 --
 
 ```bash
 vol2splat batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
+python -m vol2splat.cli batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
 ```
 
 批量运行结束后，会在 `output-root` 下额外写出：

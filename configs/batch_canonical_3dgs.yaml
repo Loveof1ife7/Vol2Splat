@@ -1,3 +1,10 @@
+batch:
+  size: 100
+  shuffle: true
+  seed: 7
+  # optional: only run one batch at a time
+  # batch_index: 1
+
 io:
   reader: nii
   path: raw/{case_id}/ct.nii.gz
@@ -7,7 +14,7 @@ io:
   #   tile_size: 512
   #   tile_stride: 512
   #   write_tiles: true
-  #   output_dir: outputs/{case_id}/input_tiles
+  #   output_dir: outputs/{batch_id}/{case_id}/input_tiles
 
 preprocess:
   - name: canonicalize
@@ -15,11 +22,11 @@ preprocess:
     target_spacing: 1.0
     pad_to_cube: true
     write_vti: true
-    vti_path: outputs/{case_id}/{input_stem}_canonical.vti
+    vti_path: outputs/{batch_id}/{case_id}/{input_stem}_canonical.vti
 
 render:
   renderer: pv_engine
-  path: outputs/{case_id}
+  path: outputs/{batch_id}/{case_id}
   executable: pvpython
   num: 64
   w: 800
@@ -64,10 +71,10 @@ render:
 
 sampling:
   name: opacity
-  n_points: 50000
+  n_points: 100000
   tf_backend: torch
   tf_device: cuda
 
 export:
   writer: ply
-  path: outputs/{case_id}
+  path: outputs/{batch_id}/{case_id}

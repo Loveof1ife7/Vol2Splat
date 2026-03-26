@@ -65,6 +65,10 @@ def batch(
     case_glob: str = typer.Option("s*", "--case-glob", help="Glob used to discover case directories"),
     filename: Optional[str] = typer.Option(None, "--filename", help="Optional fixed input filename inside each case directory"),
     continue_on_error: bool = typer.Option(True, "--continue-on-error/--fail-fast", help="Continue batch processing when a case fails"),
+    batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Number of cases per random batch"),
+    shuffle: Optional[bool] = typer.Option(None, "--shuffle/--no-shuffle", help="Shuffle cases before grouping into batches"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed used when shuffling cases into batches"),
+    batch_index: Optional[int] = typer.Option(None, "--batch-index", help="Only process one 1-based batch index"),
 ):
     """Run the pipeline for all discovered cases under a raw data root."""
     try:
@@ -75,8 +79,16 @@ def batch(
             case_glob=case_glob,
             filename=filename,
             continue_on_error=continue_on_error,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            seed=seed,
+            batch_index=batch_index,
         )
-        typer.echo(f"Batch completed. cases={report['total_cases']} ok={report['succeeded']} failed={report['failed']}")
+        typer.echo(
+            f"Batch completed. batches={report['total_batches']} "
+            f"selected={report.get('requested_batch_index') or 'all'} "
+            f"cases={report['total_cases']} ok={report['succeeded']} failed={report['failed']}"
+        )
         if report.get("report_json"):
             typer.echo(f"Batch report: {report['report_json']}")
     except Exception as e:
