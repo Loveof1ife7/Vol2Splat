@@ -131,6 +131,17 @@ Vol2Splat/
 推荐继续使用你的 `data` 环境：
 
 ```bash
+ln -s ~/autodl-tmp/sofewares/ParaView-5.12.1-egl-MPI-Linux-Python3.10-x86_64/bin/pvpython /usr/local/bin/pvpython
+pvpython --version
+
+apt-get update
+apt-get install -y libegl1-mesa libgl1-mesa-glx libosmesa6 libglu1-mesa
+apt-get install -y libx11-6 libxext6 libxrender1 libxt6
+
+echo 'export LIBGL_ALWAYS_SOFTWARE=1' >> ~/.bashrc
+echo 'export OSMESA_LIBRARY=/usr/lib/x86_64-linux-gnu/libOSMesa.so' >> ~/.bashrc
+
+source ~/.bashrc
 conda create -n data python=3.10
 conda activate data
 pip install -e .

@@ -1,0 +1,28 @@
+# 专用于 scipts/batch_render_datasets_from_volumes.py 的“梯度部分渲染”配置
+# 与 configs/batch_datasets_from_volumes.yaml 分离，避免影响原有流程。
+
+render:
+  executable: pvpython
+
+  # 视角与图像
+  num: 84
+  test_num: 20
+  w: 512
+  h: 512
+
+  # 体渲染与 TF
+  band_count: 10
+  opaque_unit: 3.0
+  scene_bbox_size: 2.6
+  tf_mode: linear_gs
+  opacity_scale: 0.2
+  hist_eq: true
+  camera_convention: opencv
+
+  # 梯度过滤（对齐 gs-datagen 的 use_gradient 思路）
+  gradient: true
+  grad_opacity: 0.2
+
+sampling:
+  n_points: 200000
+  tf_device: cuda

@@ -1,5 +1,5 @@
 batch:
-  size: 100
+  size: 10
   shuffle: true
   seed: 7
   # optional: only run one batch at a time
@@ -29,8 +29,8 @@ render:
   path: outputs/{batch_id}/{case_id}
   executable: pvpython
   num: 64
-  w: 800
-  h: 800
+  w: 512
+  h: 512
   vfov: 45
   test_num: 10
   radius_scale: 0.8
@@ -38,7 +38,7 @@ render:
   cmaps: Cool to Warm
   band_count: 10
   shading: 0
-  opaque_unit: 1.5
+  opaque_unit: 2.0
   fxaa: 1
   tf_mode: linear
   index: true

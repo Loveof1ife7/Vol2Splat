@@ -14,12 +14,24 @@ class MultiViewExporter:
     """协调器：管理 Renderer, Scene, TFManager 并执行导出工作流。"""
     def __init__(self, args: argparse.Namespace):
         self.args = args
+        self.camera_convention = str(getattr(args, "camera_convention", "opengl")).strip().lower()
+        assert self.camera_convention in ("opengl", "opencv"), "camera_convention must be 'opengl' or 'opencv'"
         self.renderer = VolumeRenderer(args.vti, args)
         self.scene = Scene(self.renderer.render_bounds, args)
         self.tf_manager = TFManager(args)
         # 初始化 anysplat 相关状态
         self.anysplat_scene_idx = 0
         self.anysplat_scene_names = []
+
+    def _convert_c2w_for_output(self, c2w: np.ndarray) -> np.ndarray:
+        if self.camera_convention == "opengl":
+            return c2w
+        # OpenGL C2W (X right, Y up, Z back) -> OpenCV C2W (X right, Y down, Z front)
+        gl_to_cv = np.diag([1.0, -1.0, -1.0])
+        out = np.eye(4, dtype=float)
+        out[:3, :3] = gl_to_cv @ c2w[:3, :3] @ gl_to_cv.T
+        out[:3, 3] = gl_to_cv @ c2w[:3, 3]
+        return out
 
     def run(self):
         """执行整个导出过程。"""
@@ -186,6 +198,7 @@ class MultiViewExporter:
 
             # 2. 获取归一化的 C2W 矩阵 (保持不变)
             c2w = self.scene.get_normalized_c2w(eye, focal, vup)
+            c2w_out = self._convert_c2w_for_output(c2w)
             
             # 3. 分配和保存 (略微简化 RGB 路径逻辑)
             if anysplat_root:
@@ -285,14 +298,14 @@ class MultiViewExporter:
                 # anysplat 格式：file_path 相对于 scene 目录
                 frame_data = {
                     "file_path": os.path.join("images", fname).replace("\\", "/"),
-                    "transform_matrix": c2w.tolist(),
+                    "transform_matrix": c2w_out.tolist(),
                 }
             else:
                 # Vol2GS 格式
                 relative_file_base = f"./{split_tag}/{file_base}"
                 frame_data = {
                     "file_path": relative_file_base,
-                    "transform_matrix": c2w.tolist(),
+                    "transform_matrix": c2w_out.tolist(),
                 }
                 # if npy_path:
                 #     # 深度文件相对于 out_dir
@@ -317,6 +330,7 @@ class MultiViewExporter:
             "fl_x": self.scene.intrinsics["fx"], "fl_y": self.scene.intrinsics["fy"], 
             "cx": self.scene.intrinsics["cx"], "cy": self.scene.intrinsics["cy"],
             "camera_model": "OPENCV",
+            "camera_convention": self.camera_convention,
             "render_bounds": list(self.scene.bounds),
             "render_world_transform": self.renderer.render_world_transform,
         }

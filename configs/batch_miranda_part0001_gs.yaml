@@ -1,0 +1,38 @@
+# 仅用于 miranda part_0001 单块：10 个 TF 场景 + 法线引导 gs_ply
+# 与 run_batch_render_datasets_from_volumes.sh 配合：
+#   DATASETS=miranda_1024x1024x1024_float32_part_0001 CONFIG=本文件
+
+render:
+  executable: pvpython
+  num: 84
+  test_num: 20
+  w: 512
+  h: 512
+  band_count: 10
+  opaque_unit: 3.0
+  scene_bbox_size: 2.6
+  tf_mode: linear_gs
+  opacity_scale: 0.2
+  hist_eq: true
+  camera_convention: opencv
+
+sampling:
+  n_points: 200000
+  tf_backend: torch
+  tf_device: cuda
+  uniform_tf_filter: true
+  uniform_stride: auto
+  alpha_threshold: 0.0
+  jitter: false
+  anisotropic_init: true
+  aniso_field: alpha
+  aniso_tangent_scale_mul: 1.2
+  aniso_normal_scale_mul: 0.1
+  aniso_voxel_size_mode: mean_spacing
+
+export:
+  writer: gs_ply
+  params:
+    sh_degree: 3
+    # 若点云需 y、z 取反才能与 transforms 中相机一致，设为 true（会同步修正 nx,ny,nz 与 rot）
+    negate_yz_axes: true

@@ -2,8 +2,21 @@ import copy
 import json
 import os
 import random
+import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
+
+# 与 scipts/batch_render_datasets_from_volumes.py 的 CMAP_POOL 对齐，用于 cmaps_random
+DEFAULT_CMAP_POOL: List[str] = [
+    "Viridis (matplotlib)",
+    "Inferno (matplotlib)",
+    "Plasma (matplotlib)",
+    "Magma (matplotlib)",
+    "Turbo",
+    "Cool to Warm (Extended)",
+    "Rainbow Desaturated",
+    "Blue to Red Rainbow Desaturated",
+]
 
 from .config import Config, load_config_data
 from .core.pipeline import run_pipeline_context
@@ -93,6 +106,37 @@ def assign_cases_to_batches(
     return assigned
 
 
+def _normalize_cmap_pool(pool: Any) -> List[str]:
+    if pool is None:
+        return list(DEFAULT_CMAP_POOL)
+    if isinstance(pool, list):
+        return [str(x).strip() for x in pool if str(x).strip()]
+    if isinstance(pool, str):
+        return [t.strip() for t in re.split(r"[\n,]+", pool) if t.strip()]
+    raise ValueError("render.cmaps_pool must be a list of names or a comma/newline-separated string")
+
+
+def _rng_for_case(global_seed: Optional[int], case_id: str) -> random.Random:
+    s = int(global_seed) if global_seed is not None else 0
+    for ch in case_id:
+        s = (s * 1315423911 + ord(ch)) & 0xFFFFFFFF
+    return random.Random(s)
+
+
+def _apply_random_cmaps(render_cfg: Dict[str, Any], case_info: Dict[str, str]) -> None:
+    """若 render.cmaps_random 为 true，则为每个 TF band 从池中随机选配色（每病例可复现）。"""
+    flag = bool(render_cfg.pop("cmaps_random", False))
+    pool_raw = render_cfg.pop("cmaps_pool", None)
+    seed_override = render_cfg.pop("cmaps_seed", None)
+    if not flag:
+        return
+    pool = _normalize_cmap_pool(pool_raw)
+    seed = seed_override if seed_override is not None else case_info.get("batch_seed")
+    band_count = int(render_cfg.get("band_count", 10))
+    rng = _rng_for_case(seed, case_info["case_id"])
+    render_cfg["cmaps"] = [rng.choice(pool) for _ in range(band_count)]
+
+
 def _render_template_values(value: Any, context: Dict[str, str]) -> Any:
     if isinstance(value, str):
         return value.format_map(_SafeFormatDict(context))
@@ -139,6 +183,7 @@ def prepare_case_config_data(base_config_data: Dict[str, Any], case_info: Dict[s
         if isinstance(qc_cfg, dict):
             qc_cfg.setdefault("report_json", os.path.join(case_output_dir, "render_qc.json"))
             qc_cfg.setdefault("report_md", os.path.join(case_output_dir, "render_qc.md"))
+        _apply_random_cmaps(render_cfg, case_info)
 
     export_cfg = config_data.get("export")
     if isinstance(export_cfg, dict) and (override_paths or not export_cfg.get("path")):
@@ -244,6 +289,9 @@ def run_batch(
             context = run_pipeline_context(None, None, cfg)
             render_result = context.get("render_result") or {}
             qc_result = render_result.get("qc") or {}
+            tf_cmaps = None
+            if cfg.render and isinstance(cfg.render.params, dict):
+                tf_cmaps = cfg.render.params.get("cmaps")
             entry.update({
                 "status": "ok",
                 "canonical_vti_path": context.get("canonical_vti_path"),
@@ -252,6 +300,7 @@ def run_batch(
                 "passed_tf_names": qc_result.get("passed_tf_names", []),
                 "qc_report_json": qc_result.get("report_json"),
                 "qc_report_md": qc_result.get("report_md"),
+                "tf_cmaps": tf_cmaps,
             })
             report["succeeded"] += 1
         except Exception as exc:

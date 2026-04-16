@@ -54,6 +54,37 @@ class VolumeRenderer:
         
         # 2. 处理 CellData 到 PointData，并根据需要对向量场取模长
         self.src, self.array_name, assoc = self._setup_data_array(self.src, self.rv)
+        self.use_gradient = bool(getattr(self.args, "gradient", False))
+        self.grad_min = 0.0
+        self.grad_max = 1.0
+        if self.use_gradient:
+            grad_filter = Gradient(Input=self.src)
+            grad_filter.ScalarArray = ['POINTS', self.array_name]
+            grad_filter.ComputeGradient = 1
+            grad_filter.ResultArrayName = "Gradients"
+
+            grad_mag_calc = Calculator(Input=grad_filter)
+            grad_mag_calc.ResultArrayName = "GradientMag"
+            grad_mag_calc.Function = "mag(Gradients)"
+            Hide(grad_filter, self.rv)
+            Hide(grad_mag_calc, self.rv)
+            UpdatePipeline(proxy=grad_mag_calc)
+
+            data_info = grad_mag_calc.GetDataInformation()
+            pdi = data_info.GetPointDataInformation()
+            grad_array_info = None
+            for i in range(pdi.GetNumberOfArrays()):
+                ai = pdi.GetArrayInformation(i)
+                if ai and ai.GetName() == "GradientMag":
+                    grad_array_info = ai
+                    break
+            assert grad_array_info is not None, "无法获取 GradientMag 数组信息"
+            try:
+                grad_range = grad_array_info.GetRange()
+            except Exception:
+                grad_range = grad_array_info.GetComponentRange(0)
+            self.grad_min, self.grad_max = float(grad_range[0]), float(grad_range[1])
+            print(f"[Renderer] Gradient Magnitude Range: [{self.grad_min:.6f}, {self.grad_max:.6f}]")
         
         # 3. 获取 DisplayProperties (Disp)
         self.disp = GetDisplayProperties(self.src, view=self.rv)
@@ -290,6 +321,29 @@ class VolumeRenderer:
         else:
             # TODO: 实现 args.opacity_preset, args.opacity_scale 等逻辑
             pass
+
+        if self.use_gradient:
+            if hasattr(self.disp, "UseGradientOpacity"):
+                self.disp.UseGradientOpacity = 1
+                grad_pwf = self.disp.GradientOpacity
+                threshold_ratio = float(getattr(self.args, "grad_opacity", 0.2))
+                threshold_ratio = min(max(threshold_ratio, 0.0), 1.0)
+                high_bound = self.grad_min + (self.grad_max - self.grad_min) * threshold_ratio
+                grad_pwf.Points = [
+                    self.grad_min, 0.0, 0.5, 0.0,
+                    high_bound,    0.0, 0.5, 0.0,
+                    self.grad_max, 1.0, 0.5, 0.0,
+                ]
+                self.disp.GradientOpacity = grad_pwf
+                print(
+                    f"[Renderer] Gradient opacity enabled: threshold={high_bound:.6f} "
+                    f"(ratio={threshold_ratio:.3f}, range=[{self.grad_min:.6f}, {self.grad_max:.6f}])"
+                )
+            else:
+                print("[warn] UseGradientOpacity is not supported by current ParaView representation. Skip gradient opacity.")
+        else:
+            if hasattr(self.disp, "UseGradientOpacity"):
+                self.disp.UseGradientOpacity = 0
         
         UpdatePipeline()
         Render()
@@ -409,7 +463,19 @@ class VolumeRenderer:
 
 
         # === Manifold switch ===
-        manifold = (self.args.tf_mode in ["manifold", "gaussian", "linear"])
+        manifold = (
+            self.args.tf_mode in [
+                "manifold",
+                "gaussian",
+                "linear",
+                "linear_vol2splat",
+                "linear_v2splat",
+                "linear_gs",
+                "linear_gsdatagen",
+                "linear_gs_sum2",
+                "linear_gs_pair",
+            ]
+        )
 
         if hasattr(self.disp, "UseGradientForTransfer2D"):
             self.disp.UseGradientForTransfer2D = 1 if manifold else 0

@@ -38,7 +38,7 @@ class Writer(ABC):
 
 
 def _default_export_filename(writer_name: str) -> str:
-    return {'ply': 'points.ply', 'npz': 'points.npz'}.get(writer_name, f'points.{writer_name}')
+    return {'ply': 'points.ply', 'gs_ply': 'points.ply', 'npz': 'points.npz'}.get(writer_name, f'points.{writer_name}')
 
 
 def _normalize_export_path(base_path: str | None, writer_name: str) -> str | None:
@@ -225,8 +225,14 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
                 writer_params.setdefault('render_world_transform', render_result['render_world_transform'])
         writer = get_writer(writer_name)()
 
+    empty_sampling_errors = {
+        'No voxels remain after TF alpha filtering',
+        'No nonzero-probability voxels available for sampling',
+    }
     last_pc = None
     written_paths = []
+    sampled_tasks = []
+    skipped_sampling_tasks = []
     if not sampling_tasks:
         print('No sampling tasks remain after QC filtering, skipping sampling/export.')
     for task in sampling_tasks:
@@ -235,14 +241,27 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
         print(f"Sampling using {sampler_name}{' (' + label + ')' if label else ''}...")
         if tf_json:
             print(f"Using transfer function: {tf_json}")
-        if canonical_vti_path:
-            task.setdefault('canonical_vti_path', canonical_vti_path)
-            try:
-                pc = sampler.sample_canonical_vti(canonical_vti_path, task)
-            except NotImplementedError:
+        try:
+            if canonical_vti_path:
+                task.setdefault('canonical_vti_path', canonical_vti_path)
+                try:
+                    pc = sampler.sample_canonical_vti(canonical_vti_path, task)
+                except NotImplementedError:
+                    pc = sampler.sample(vol, task)
+            else:
                 pc = sampler.sample(vol, task)
-        else:
-            pc = sampler.sample(vol, task)
+        except AssertionError as e:
+            msg = str(e)
+            if msg in empty_sampling_errors:
+                print(f"Skipping sampling/export for {label or 'default'}: {msg}")
+                skipped_sampling_tasks.append({
+                    'task': dict(task),
+                    'reason': msg,
+                })
+                continue
+            raise
+
+        sampled_tasks.append(dict(task))
         last_pc = pc
         if writer is not None:
             path_to_write = _resolve_export_path_for_task(export_base_path, writer_name, task, render_result, multi_tf_mode)
@@ -257,6 +276,8 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
         'canonical_vti_path': canonical_vti_path,
         'render_result': render_result,
         'sampling_tasks': sampling_tasks,
+        'sampled_tasks': sampled_tasks,
+        'skipped_sampling_tasks': skipped_sampling_tasks,
         'point_cloud': last_pc,
         'written_paths': written_paths,
         'tile_name': tile_name,

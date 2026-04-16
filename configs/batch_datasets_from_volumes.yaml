@@ -1,0 +1,58 @@
+# 专用于 scipts/batch_render_datasets_from_volumes.py + run_batch_render_datasets_from_volumes.sh
+#
+# 路径类参数（datasets_root / vti_cache_root / out_root 等）由 .sh 的环境变量或命令行传入，不写在本文件。
+#
+# ---------------------------------------------------------------------------
+# 如何「处理 vti_cache 里所有 vti」？
+# ---------------------------------------------------------------------------
+# 脚本按「数据集名」工作：默认扫描 DATASETS_ROOT 下**一级子目录名**，对每个名字：
+#   在 VTI_CACHE_ROOT/<同名目录> 下找 *.vti（若名字带 _part_XXXX 则只匹配该 part）。
+# 因此要让 vti_cache 里每个体积都跑到，需要：
+#   在 DATASETS_ROOT 下为每个 vti 子目录准备一个**同名**文件夹（可为空目录，仅作名单）。
+# 例：vti_cache 有 foo_256x256x256_float32/ 与 bar_128x128x128_uint8/，则：
+#   mkdir -p $DATASETS_ROOT/foo_256x256x256_float32 $DATASETS_ROOT/bar_128x128x128_uint8
+# 也可用符号链接指到同一占位目录。
+# 若只想跑部分数据集，可设环境变量 DATASETS="name1,name2"（不必在 DATASETS_ROOT 建目录）。
+# ---------------------------------------------------------------------------
+
+render:
+  executable: pvpython
+
+  num: 84
+  test_num: 20
+  w: 512
+  h: 512
+
+  band_count: 10
+  opaque_unit: 3.0
+  scene_bbox_size: 2.6
+  tf_mode: linear_gs_sum2
+  opacity_scale: 0.2
+  hist_eq: true
+  camera_convention: opencv
+
+sampling:
+  n_points: 200000
+  tf_backend: torch
+  tf_device: cuda
+  uniform_tf_filter: true
+  uniform_stride: auto
+  alpha_threshold: 0.0
+  jitter: false
+
+  # 与 batch_miranda_part0001_gs.yaml 一致：法线引导各向异性 + 需配合 export.writer: gs_ply
+  anisotropic_init: true
+  aniso_field: alpha
+  aniso_tangent_scale_mul: 1.2
+  aniso_normal_scale_mul: 0.1
+  aniso_voxel_size_mode: mean_spacing
+  aniso_grad_eps: 1.0e-6
+  aniso_min_linear_scale: 1.0e-6
+
+export:
+  writer: gs_ply
+  params:
+    sh_degree: 3
+    # 若在训练里用 load_ply 的 flip_yz 只改 means，建议改为在导出时统一修正并关闭训练端 flip_yz：
+    negate_yz_axes: true
+    default_linear_scale: 0.01

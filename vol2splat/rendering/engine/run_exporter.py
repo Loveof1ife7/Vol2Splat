@@ -31,13 +31,17 @@ def build_parser():
     ap.add_argument('--bg', default='0,0,0')
     ap.add_argument('--up', default='0,1,0')
     ap.add_argument('--opacity_only', action='store_true')
+    ap.add_argument('--opacity_scale', '--opacity-scale', dest='opacity_scale', type=float, default=1.0)
     ap.add_argument('--hist_eq', action='store_true')
     ap.add_argument('--vector_magnitude', action='store_true')
     ap.add_argument('--gradient', action='store_true')
+    ap.add_argument('--grad_opacity', '--grad-opacity', dest='grad_opacity', type=float, default=0.2)
     ap.add_argument('--index', action='store_true')
     ap.add_argument('--adaptive_camera', '--adaptive-camera', dest='adaptive_camera', type=int, default=0)
     ap.add_argument('--anysplat_root', '--anysplat-root', dest='anysplat_root', default=None)
     ap.add_argument('--anysplat_only', '--anysplat-only', dest='anysplat_only', action='store_true')
+    ap.add_argument('--camera_convention', '--camera-convention', dest='camera_convention',
+                    choices=['opengl', 'opencv'], default='opengl')
     return ap
 
 def main():
