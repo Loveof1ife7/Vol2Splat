@@ -207,7 +207,6 @@ def discover_dataset_inputs(
 
 def discover_dataset_inputs_from_source_root(
     source_root: str,
-    datasets: str | None = None,
     max_vti_parts: int | None = None,
 ) -> List[Dict[str, Any]]:
     root = Path(source_root).resolve()
@@ -216,7 +215,6 @@ def discover_dataset_inputs_from_source_root(
     if max_vti_parts is not None and max_vti_parts <= 0:
         raise ValueError(f"max_vti_parts must be > 0, got {max_vti_parts}")
 
-    selected_names = {s.strip() for s in datasets.split(",") if s.strip()} if datasets else None
     candidate_dirs = [d for d in sorted(root.iterdir()) if d.is_dir()]
     vti_dirs = [d for d in candidate_dirs if any(d.glob("*.vti"))]
 
@@ -224,8 +222,6 @@ def discover_dataset_inputs_from_source_root(
     if vti_dirs:
         for dataset_dir in vti_dirs:
             dataset_name = dataset_dir.name
-            if selected_names is not None and dataset_name not in selected_names:
-                continue
             dataset_dims = None
             dataset_dtype = None
             try:
@@ -255,8 +251,6 @@ def discover_dataset_inputs_from_source_root(
     raw_files = sorted(path.resolve() for path in root.rglob("*.raw") if path.is_file())
     for raw_path in raw_files:
         dataset_name = raw_path.stem
-        if selected_names is not None and dataset_name not in selected_names:
-            continue
         dataset_id = _parse_dataset_id(dataset_name)
         x, y, z = dataset_id["dims_xyz"]
         cases.append({
@@ -573,14 +567,9 @@ def run_batch(
     seed: int | None = None,
     batch_index: int | None = None,
     input_mode: str = "case",
-    datasets: str | None = None,
-    datasets_root: str = "datasets_for_volume_3dgs",
-    volumes_root: str = "volumes",
-    vti_cache_root: str = "vti_cache",
     dataset_source_root: str | None = None,
     max_vti_parts: int | None = None,
     skip_existing: bool = False,
-    dataset_vti_only: bool = False,
 ) -> Dict[str, Any]:
     base_config_data = load_config_data(config_path)
     raw_batch_cfg = base_config_data.get("batch")
@@ -593,21 +582,12 @@ def run_batch(
         reader = base_config_data.get("io", {}).get("reader", "nii")
         cases = discover_case_inputs(raw_root, reader=reader, case_glob=case_glob, filename=filename)
     else:
-        if dataset_source_root:
-            cases = discover_dataset_inputs_from_source_root(
-                source_root=dataset_source_root,
-                datasets=datasets,
-                max_vti_parts=max_vti_parts,
-            )
-        else:
-            cases = discover_dataset_inputs(
-                datasets=datasets,
-                datasets_root=datasets_root,
-                volumes_root=volumes_root,
-                vti_cache_root=vti_cache_root,
-                max_vti_parts=max_vti_parts,
-                vti_only=dataset_vti_only,
-            )
+        if not dataset_source_root:
+            raise ValueError("dataset mode requires --dataset-source-root")
+        cases = discover_dataset_inputs_from_source_root(
+            source_root=dataset_source_root,
+            max_vti_parts=max_vti_parts,
+        )
     dataset_plain_layout = (
         mode == "dataset"
         and not has_explicit_batch_cfg

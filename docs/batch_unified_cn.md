@@ -1,124 +1,31 @@
-# 统一批处理文档（`vol2splat.cli batch`）
+# 统一批处理参数影响说明（`vol2splat.cli batch`）
 
-本文档说明统一后的批处理入口：
-
-```bash
-python -m vol2splat.cli batch ...
-```
-
-它覆盖两类任务：
-
-- `case` 模式：面向 `raw/sXXXX` 的病例批处理
-- `dataset` 模式：面向 `datasets + vti_cache/volumes` 的数据集批处理
+本文档聚焦**配置参数对结果的影响**，尤其是体渲染（TF）与采样参数。  
+不再展开医学数据集生成流程，仅保留最小入口说明。
 
 ---
 
-## 1. 数据集输入输出参数和数据结构
-
-### 1.1 `case` 模式（医学病例目录）
-
-典型命令：
-
-```bash
-python -m vol2splat.cli batch \
-  --input-mode case \
-  --config configs/batch_medical_20.yaml \
-  --raw-root /root/autodl-tmp/projects/Vol2Splat/raw \
-  --output-root /root/autodl-tmp/projects/data/medical_dataset_vol2splat_20 \
-  --batch-size 20 \
-  --batch-index 1 \
-  --no-shuffle
-```
-
-输入发现规则：
-
-- 扫描 `--raw-root` 下匹配 `--case-glob` 的目录（默认 `s*`）
-- 按配置 `io.reader` 选择候选文件（`nii` 时为 `*.nii.gz/*.nii`）
-- 同目录内优先使用 `ct.nii.gz`、`ct.nii`、`volume.vti`
-
-输出结构（启用批次）：
-
-```text
-<output-root>/
-  batch_0001/
-    s0001/
-      TF01/... TF02/...
-      render_qc.json / render_qc.md
-    s0002/
-    ...
-  batch_report.json
-  batch_report.md
-```
-
-### 1.2 `dataset` 模式（数据集列表 + vti cache）
-
-典型命令：
+## 1. 最小入口（只看必需项）
 
 ```bash
 python -m vol2splat.cli batch \
   --input-mode dataset \
-  --config configs/batch_datasets_from_volumes.yaml \
   --dataset-source-root "/root/autodl-tmp/projects/data/vti_cache" \
-  --datasets "$DATASETS" \
-  --output-root "/root/autodl-tmp/projects/data/datasets_for_volume_3dgs_vol2splat" \
-  --max-vti-parts 2 \
-  --skip-existing
+  --config configs/batch_datasets_from_volumes.yaml \
+  --output-root "/root/autodl-tmp/projects/data/datasets_for_volume_3dgs_vol2splat"
 ```
 
-输入发现规则：
+入口参数只需理解：
 
-- 若给 `--datasets`：按逗号分隔名称处理
-- 否则：扫描 `--datasets-root` 一级子目录名作为数据集名
-- 若给 `--dataset-source-root`，优先使用该目录作为唯一输入源：
-  - 目录下存在 `*.vti` 子目录时，按 VTI 模式处理
-  - 否则递归扫描该目录下 `*.raw` 文件并按 RAW 模式处理
-- 若给 `--data-root`，会自动映射：
-  - `--datasets-root = {data-root}/datasets_for_volume_3dgs`
-  - `--vti-cache-root = {data-root}/vti_cache`
-  - `--volumes-root = {data-root}/volumes`
-- 每个数据集先查 `--vti-cache-root/<dataset_name>/*.vti`
-- 若名称带 `_part_XXXX`，会按 part 精确匹配
-- 若找不到 VTI，默认回退到 `--volumes-root` 递归找 `*.raw`
-- 若指定 `--dataset-vti-only`，则不回退 `raw`，该数据集直接跳过
-- `raw` 数据集名必须可解析 `name_XxYxZ_dtype[_part_0000]`
-
-输出结构：
-
-- 若输入来自 VTI part：输出目录名用 `part stem`（例如 `xxx_part_0000`）
-- 若输入来自 RAW：输出目录名用数据集名
-- 每个 case 目录下增加 `_batch_done.json`
-
-### 1.3 与旧脚本等价的关键参数
-
-- `--dataset-source-root`：单路径输入模式（推荐，自动判断 VTI/RAW）
-- `--data-root`：统一指定 dataset 输入根目录（推荐）
-- `--skip-existing`：跳过完整输出（检查 `_batch_done.json` 或 TF 目录完整性）
-- `--max-vti-parts N`：每个数据集最多处理前 N 个 VTI part
-- `--dataset-vti-only`：只允许从 `vti_cache` 取输入，禁用 `raw` 回退
-- `--batch-size / --batch-index / --shuffle / --seed`：统一批调度策略
-
-### 1.4 常见场景：删除某个 VTI 后不希望被重新生成
-
-例如你删除了：
-
-- `/root/autodl-tmp/projects/data/vti_cache/blunt_fin_256x128x64_uint8/...`
-
-但 `volumes` 里仍有同名 raw，默认会触发 raw 回退并重新生成。  
-这时请在命令里加 `--dataset-vti-only`，即可避免该数据集被生成。
-
-如果你改用单路径输入：
-
-- `--dataset-source-root /root/autodl-tmp/projects/data/vti_cache`
-
-则不会访问 `volumes`，删除掉的 VTI 也不会因 raw 回退而被重新生成。
+- `--dataset-source-root`：输入体素根目录（可指向 `vti_cache` 或 `raw`）
+- `--config`：决定渲染、采样、导出行为的核心配置
+- `--output-root`：输出目录
 
 ---
 
-## 2. 渲染参数（重点：随机 TF 与不同 TF 类型）
+## 2. 体渲染参数（`render`）如何影响结果
 
-### 2.1 随机 TF 选择（推荐方式）
-
-在配置中使用：
+### 2.1 TF 数量与稳定性
 
 ```yaml
 render:
@@ -126,56 +33,59 @@ render:
   band_count: 10
 ```
 
-行为说明：
+影响：
 
-- 每个 case 自动生成 `band_count` 个 colormap
-- 每个 case 的随机结果可复现（由 `batch.seed + case_id` 派生）
-- 渲染产生 `TF01 ... TFxx`
+- `band_count` 越大，每个体数据会生成更多 TF 分支（`TF01...TFxx`）
+- `cmaps_random: true` 会为每个 case 随机采样 colormap
+- 批处理中配合固定 `batch.seed` 时，TF 随机结果可复现
 
-如需固定 TF，可直接写：
+如需固定 TF 集合：
 
 ```yaml
 render:
-  cmaps: ["Viridis (matplotlib)", "Inferno (matplotlib)", "..."]
-  band_count: 10
+  cmaps: ["Viridis (matplotlib)", "Inferno (matplotlib)"]
+  band_count: 2
 ```
 
-### 2.2 `tf_mode` 选择建议
+### 2.2 `tf_mode` 与视觉风格
 
-- `linear_vol2splat`：更贴合当前医学流程默认
-- `linear_gs` / `linear_gs_sum2`：更偏 3DGS 数据风格
+常见模式：
 
-建议配套关系：
+- `linear_vol2splat`
+- `linear_gs`
+- `linear_gs_sum2`
 
-- 医学病例渲染优先从 `linear_vol2splat + opacity_scale 0.3~0.6` 起步
-- 3DGS 训练集优先 `linear_gs_sum2`，并结合采样过滤参数
+影响（经验）：
 
-### 2.3 多 TF 的筛选与保留
+- `linear_vol2splat`：灰度到透明度映射更直接，结果更“保守”
+- `linear_gs` / `linear_gs_sum2`：更偏向 GS 训练可用的颜色-透明度分布
 
-- 若 render QC 开启且 `skip_failed_tf: true`，失败 TF 不进入采样
-- batch 收尾阶段会清理“未采样到的空 TF 目录”
-- 最终只保留有效 TF，并写入 `_batch_done.json`
+### 2.3 渲染 QC 对后续采样的影响
+
+当配置启用 QC 且 `skip_failed_tf: true` 时：
+
+- 失败 TF 不进入采样阶段
+- 空 TF 目录会在 batch 收尾清理
+- 最终 `_batch_done.json` 只记录有效 TF
 
 ---
 
-## 3. 点云生成方式和设置
+## 3. 采样参数（`sampling`）如何影响点云
 
-### 3.1 采样器类型
-
-项目内可用采样器（以插件注册为准）：
-
-- `opacity`：当前批处理主力方式（渲染 TF 驱动）
-- `uniform`：更均匀的几何采样
-- `wavelet`：频域/结构敏感采样
-
-批量场景推荐先用：
+### 3.1 采样器选择
 
 ```yaml
 sampling:
   name: opacity
 ```
 
-### 3.2 `opacity` 常用参数
+可用采样器（以插件注册为准）：
+
+- `opacity`：基于 TF alpha 的主力采样
+- `uniform`：几何上更均匀
+- `wavelet`：频域结构驱动
+
+### 3.2 `opacity` 关键参数
 
 ```yaml
 sampling:
@@ -183,23 +93,46 @@ sampling:
   n_points: 200000
   tf_backend: torch
   tf_device: cuda
-  uniform_tf_filter: false
+  uniform_tf_filter: true
+  uniform_stride: auto
   alpha_threshold: 0.0
   jitter: true
+  anisotropic_init: true
 ```
 
-说明：
+参数影响：
 
-- `uniform_tf_filter: true` 会先做均匀候选再用 alpha 过滤，可能更“稀”
-- `alpha_threshold` 越高，保留点越少
-- `jitter` 会增加采样位置随机扰动
+- `n_points`：目标点数上限，直接影响密度与体积
+- `uniform_tf_filter`：先做规则体素候选，再按 alpha 过滤；点云更均匀但可能更稀
+- `uniform_stride`：
+  - 固定整数：控制候选网格稀疏度
+  - `auto`：根据 `n_points` 与 alpha 保留率自动估计步长
+- `alpha_threshold`：阈值越高，低透明区域点越少
+- `jitter`（即 use_jitter 语义）：给采样坐标加小扰动，降低网格感
+- `anisotropic_init`：为 GS 写入初始各向异性尺度与旋转属性
 
-### 3.3 导出器类型
+### 3.3 `opacity` 的代码分层建议
 
-- `export.writer: ply`：通用点云导出
-- `export.writer: gs_ply`：面向 3D Gaussian Splatting 的导出格式
+为避免主流程膨胀，推荐保持如下分层（已按该方向实现）：
 
-3DGS 训练建议（示例）：
+- `opacity.py`：只保留主流程编排（读取配置、组织调用、组装输出）
+- `sampling/low_level`：封装细节计算
+  - `uniform_tf_filter / auto_stride`
+  - `jitter`
+  - `anisotropic_init`
+
+这与 `wavelet` 的“主流程 + low_level”组织方式一致，更利于维护和替换策略。
+
+---
+
+## 4. 导出参数（`export`）如何影响产物
+
+### 4.1 导出器选择
+
+- `export.writer: ply`：通用点云（便于常规可视化与检查）
+- `export.writer: gs_ply`：面向 3D Gaussian Splatting 训练
+
+### 4.2 `gs_ply` 常用参数
 
 ```yaml
 export:
@@ -210,16 +143,20 @@ export:
     default_linear_scale: 0.01
 ```
 
+影响：
+
+- `sh_degree`：控制颜色球谐阶数，影响表达能力与存储规模
+- `negate_yz_axes`：坐标系约定修正，关系到训练时方向是否一致
+- `default_linear_scale`：缺省高斯尺度，影响初始 splat 大小
+
 ---
 
-## 4. 最小迁移建议
+## 5. 建议的调参顺序（体渲染优先）
 
-从旧 datasets 批处理脚本迁移时，优先保留：
+推荐按下面顺序调参，避免同时改太多项：
 
-1. `--input-mode dataset`
-2. `--datasets / --datasets-root / --vti-cache-root / --volumes-root`
-3. `--max-vti-parts`
-4. `--skip-existing`
-5. 配置文件中的 `sampling` 与 `export` 段
+1. 先定 `render`：`tf_mode`、`cmaps_random/cmaps`、`band_count`
+2. 再定 `sampling`：`n_points`、`uniform_tf_filter`、`alpha_threshold`
+3. 最后定 `export`：`writer` 与 `gs_ply` 参数
 
-这样可以在不改核心 pipeline 的前提下，保持与旧流程近似的实际行为。
+这样可以把“可见结构变化”与“点云采样变化”分开观察，定位问题更快。
