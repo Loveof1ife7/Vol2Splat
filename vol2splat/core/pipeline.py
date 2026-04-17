@@ -225,10 +225,10 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
                 writer_params.setdefault('render_world_transform', render_result['render_world_transform'])
         writer = get_writer(writer_name)()
 
-    empty_sampling_errors = {
+    empty_sampling_error_tokens = (
         'No voxels remain after TF alpha filtering',
         'No nonzero-probability voxels available for sampling',
-    }
+    )
     last_pc = None
     written_paths = []
     sampled_tasks = []
@@ -250,9 +250,9 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
                     pc = sampler.sample(vol, task)
             else:
                 pc = sampler.sample(vol, task)
-        except AssertionError as e:
+        except (AssertionError, ValueError) as e:
             msg = str(e)
-            if msg in empty_sampling_errors:
+            if any(token in msg for token in empty_sampling_error_tokens):
                 print(f"Skipping sampling/export for {label or 'default'}: {msg}")
                 skipped_sampling_tasks.append({
                     'task': dict(task),

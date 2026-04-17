@@ -62,8 +62,18 @@ def batch(
     config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
     raw_root: Path = typer.Option(Path("raw"), "--raw-root", help="Root directory containing case folders"),
     output_root: Path = typer.Option(Path("outputs"), "--output-root", help="Root directory for per-case outputs"),
+    input_mode: str = typer.Option("case", "--input-mode", help="Input discovery mode: case or dataset"),
     case_glob: str = typer.Option("s*", "--case-glob", help="Glob used to discover case directories"),
     filename: Optional[str] = typer.Option(None, "--filename", help="Optional fixed input filename inside each case directory"),
+    data_root: Optional[Path] = typer.Option(None, "--data-root", help="Unified root for dataset mode; maps to {data-root}/datasets_for_volume_3dgs, {data-root}/vti_cache, {data-root}/volumes"),
+    dataset_source_root: Optional[Path] = typer.Option(None, "--dataset-source-root", help="Single source root for dataset mode; auto-detects VTI directories or RAW files"),
+    datasets: Optional[str] = typer.Option(None, "--datasets", help="Comma-separated dataset names for dataset mode"),
+    datasets_root: Path = typer.Option(Path("datasets_for_volume_3dgs"), "--datasets-root", help="Dataset root used when --datasets is omitted"),
+    volumes_root: Path = typer.Option(Path("volumes"), "--volumes-root", help="Raw volume root for dataset mode fallback"),
+    vti_cache_root: Path = typer.Option(Path("vti_cache"), "--vti-cache-root", help="VTI cache root for dataset mode"),
+    max_vti_parts: Optional[int] = typer.Option(None, "--max-vti-parts", help="Limit VTI parts per dataset in dataset mode"),
+    dataset_vti_only: bool = typer.Option(False, "--dataset-vti-only/--dataset-allow-raw-fallback", help="In dataset mode, only use VTI cache and skip datasets without VTI"),
+    skip_existing: bool = typer.Option(False, "--skip-existing/--no-skip-existing", help="Skip cases whose output is already complete"),
     continue_on_error: bool = typer.Option(True, "--continue-on-error/--fail-fast", help="Continue batch processing when a case fails"),
     batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Number of cases per random batch"),
     shuffle: Optional[bool] = typer.Option(None, "--shuffle/--no-shuffle", help="Shuffle cases before grouping into batches"),
@@ -72,12 +82,29 @@ def batch(
 ):
     """Run the pipeline for all discovered cases under a raw data root."""
     try:
+        if data_root is not None:
+            base = data_root.resolve()
+            if datasets_root == Path("datasets_for_volume_3dgs"):
+                datasets_root = base / "datasets_for_volume_3dgs"
+            if vti_cache_root == Path("vti_cache"):
+                vti_cache_root = base / "vti_cache"
+            if volumes_root == Path("volumes"):
+                volumes_root = base / "volumes"
         report = run_batch(
             config_path=str(config_path),
             raw_root=str(raw_root),
             output_root=str(output_root),
+            input_mode=input_mode,
             case_glob=case_glob,
             filename=filename,
+            datasets=datasets,
+            datasets_root=str(datasets_root),
+            volumes_root=str(volumes_root),
+            vti_cache_root=str(vti_cache_root),
+            dataset_source_root=str(dataset_source_root) if dataset_source_root else None,
+            max_vti_parts=max_vti_parts,
+            dataset_vti_only=dataset_vti_only,
+            skip_existing=skip_existing,
             continue_on_error=continue_on_error,
             batch_size=batch_size,
             shuffle=shuffle,
@@ -87,7 +114,7 @@ def batch(
         typer.echo(
             f"Batch completed. batches={report['total_batches']} "
             f"selected={report.get('requested_batch_index') or 'all'} "
-            f"cases={report['total_cases']} ok={report['succeeded']} failed={report['failed']}"
+            f"cases={report['total_cases']} ok={report['succeeded']} skipped={report.get('skipped', 0)} failed={report['failed']}"
         )
         if report.get("report_json"):
             typer.echo(f"Batch report: {report['report_json']}")

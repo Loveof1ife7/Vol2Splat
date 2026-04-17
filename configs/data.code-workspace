@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../data"
+		},
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Variable-Basis-Mapping-for-Real-Time-Volumetric-Rendering"
+		},
+		{
+			"path": "../../gs-datagen-project"
+		}
+	],
+	"settings": {}
+}

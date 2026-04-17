@@ -1,4 +1,4 @@
-# 专用于 scipts/batch_render_datasets_from_volumes.py 的“梯度部分渲染”配置
+# 专用于 `python -m vol2splat.cli batch --input-mode dataset` 的“梯度部分渲染”配置
 # 与 configs/batch_datasets_from_volumes.yaml 分离，避免影响原有流程。
 
 render:

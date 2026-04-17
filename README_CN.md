@@ -207,12 +207,36 @@ python -m vol2splat.cli test_seg -c configs/canonical_3dgs.yaml --tf-dir outputs
 
 如果 `render.qc.segmentation` 里配置了 `model_url`，权重会先自动下载到本地，再执行推理。
 
+将 `volumes` 下 raw 批量切割/转换为 `vti_cache`：
+
+```bash
+python scipts/volume_splitter.py \
+  --volumes-root "/root/autodl-tmp/projects/data/volumes" \
+  --vti-cache-root "/root/autodl-tmp/projects/data/vti_cache" \
+  --max-dim 512
+```
+
 批量处理一整个 `raw/` 目录：
 
 ```bash
 vol2splat batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
 python -m vol2splat.cli batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
 ```
+
+统一入口也支持 `dataset` 模式（旧 datasets 批处理能力已合并）：
+
+```bash
+python -m vol2splat.cli batch \
+  --input-mode dataset \
+  --config configs/batch_datasets_from_volumes.yaml \
+  --dataset-source-root "/root/autodl-tmp/projects/data/vti_cache" \
+  --datasets "$DATASETS" \
+  --output-root "/root/autodl-tmp/projects/data/datasets_for_volume_3dgs_vol2splat" \
+  --max-vti-parts 2 \
+  --skip-existing
+```
+
+批处理统一文档见：`docs/batch_unified_cn.md`
 
 批量运行结束后，会在 `output-root` 下额外写出：
 
@@ -237,6 +261,10 @@ python -m vol2splat.cli batch -c configs/batch_canonical_3dgs.yaml --raw-root ra
 ### 3. 批量自动化处理
 
 见 [configs/batch_canonical_3dgs.yaml](/data/lqb/datasets/ct-datas/VolSampler/configs/batch_canonical_3dgs.yaml)
+
+### 4. 统一批处理（case + dataset）
+
+见 `docs/batch_unified_cn.md`
 
 ## 开发规范
 

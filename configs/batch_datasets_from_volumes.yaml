@@ -1,4 +1,4 @@
-# 专用于 scipts/batch_render_datasets_from_volumes.py + run_batch_render_datasets_from_volumes.sh
+# 专用于 `python -m vol2splat.cli batch --input-mode dataset`
 #
 # 路径类参数（datasets_root / vti_cache_root / out_root 等）由 .sh 的环境变量或命令行传入，不写在本文件。
 #
@@ -16,12 +16,15 @@
 # ---------------------------------------------------------------------------
 
 render:
+  renderer: pv_engine
   executable: pvpython
 
   num: 84
   test_num: 20
   w: 512
   h: 512
+  cmaps_random: true
+  cmaps_seed: 7
 
   band_count: 10
   opaque_unit: 3.0
@@ -31,7 +34,16 @@ render:
   hist_eq: true
   camera_convention: opencv
 
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    pad_to_cube: true
+    write_vti: true
+    vti_path: outputs/{batch_id}/{case_id}/{input_stem}_canonical.vti
+
 sampling:
+  name: opacity
   n_points: 200000
   tf_backend: torch
   tf_device: cuda

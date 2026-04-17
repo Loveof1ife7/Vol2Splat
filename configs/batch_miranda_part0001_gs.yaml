@@ -1,6 +1,7 @@
 # 仅用于 miranda part_0001 单块：10 个 TF 场景 + 法线引导 gs_ply
-# 与 run_batch_render_datasets_from_volumes.sh 配合：
-#   DATASETS=miranda_1024x1024x1024_float32_part_0001 CONFIG=本文件
+# 与 `python -m vol2splat.cli batch --input-mode dataset` 配合：
+#   --dataset-source-root /root/autodl-tmp/projects/data/vti_cache
+#   --datasets miranda_1024x1024x1024_float32_part_0001 --config 本文件
 
 render:
   executable: pvpython
