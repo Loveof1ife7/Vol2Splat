@@ -1,0 +1,40 @@
+template: batch1_tf1.yaml
+output_dir: generated_stack
+dataset_output_root: outputs/generated_stack
+
+items:
+  - name: range_0000_0025_ygb_single
+    case_start: s0000
+    case_end: s0025
+    tf_mode: linear_gs
+    cmap: Yellow - Gray - Blue
+
+  - name: range_0026_0050_inferno_single
+    case_start: s0026
+    case_end: s0050
+    tf_mode: linear_gs
+    cmap: Inferno
+
+  - name: range_0051_0075_grayscale_single
+    case_start: s0051
+    case_end: s0075
+    tf_mode: linear_gs
+    cmap: Grayscale
+
+  - name: range_0076_0100_bcw_single
+    case_start: s0076
+    case_end: s0100
+    tf_mode: linear_gs
+    cmap: Black, Blue and White
+
+  - name: range_0101_0125_c2w_single
+    case_start: s0101
+    case_end: s0125
+    tf_mode: linear_gs
+    cmap: Cool to Warm (Extended)
+
+  - name: range_0126_0150_turbo_single
+    case_start: s0126
+    case_end: s0150
+    tf_mode: linear_gs
+    cmap: Turbo

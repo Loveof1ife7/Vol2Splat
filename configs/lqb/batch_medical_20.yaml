@@ -2,6 +2,13 @@ batch:
   size: 20
   shuffle: false
   seed: 7
+  # 可选：只跑某个病例范围，例如 s0000~s0100
+  # case_range: s0000~s0100
+  # case_start: s0000
+  # case_end: s0100
+  # 可选：显式指定/排除病例
+  # case_ids: [s0001, s0007, s0042]
+  # exclude_case_ids: [s0005]
 
 io:
   reader: nii

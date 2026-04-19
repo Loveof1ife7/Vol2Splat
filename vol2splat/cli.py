@@ -6,6 +6,10 @@ import json
 from glob import glob
 
 from .batch import run_batch
+from .batch_seg import run_batch_seg
+from .config_stack import (
+    generate_config_stack,
+)
 from .core.pipeline import run_pipeline
 from .config import load_config, load_config_data
 from .registry import register_builtin_plugins, READERS, STAGES, SAMPLERS, WRITERS, RENDERERS, get_reader
@@ -14,13 +18,64 @@ from .rendering.segmentation_qc import evaluate_segmentation_image_paths
 
 app = typer.Typer(help="Vol2Splat: Canonical volume to render/sample/export pipeline")
 
-# Register built-in plugins on import or when app starts?
-# Better to do it in callback or main to avoid side effects if just importing app.
-# But typer doesn't have a global setup easily.
-# We'll do it in the commands or a common init function.
-
 def ensure_plugins():
+    # Centralize plugin registration so every command sees the same built-in registry.
     register_builtin_plugins()
+
+
+def _exit_with_error(exc: Exception) -> None:
+    typer.echo(f"Error: {exc}", err=True)
+    sys.exit(1)
+
+
+def _echo_batch_report(report: dict, prefix: str = "Batch completed.") -> None:
+    typer.echo(
+        f"{prefix} batches={report['total_batches']} "
+        f"selected={report.get('requested_batch_index') or 'all'} "
+        f"cases={report['total_cases']} ok={report['succeeded']} failed={report['failed']}"
+    )
+    if report.get("report_json"):
+        typer.echo(f"Batch report: {report['report_json']}")
+
+
+def _run_generated_batch_config(config_path: str) -> dict:
+    return run_batch(config_path=config_path)
+
+
+def _echo_generated_stack(summary: dict) -> None:
+    # Show the exact config/output mapping before any long batch execution starts.
+    typer.echo(
+        f"Generated stack configs: count={len(summary['items'])} "
+        f"config_dir={summary['output_dir']} dataset_output_root={summary['dataset_output_root']} "
+        f"date_tag={summary['date_tag']}"
+    )
+    for item in summary["items"]:
+        typer.echo(
+            f"  [{item['index']:02d}] {item['case_start']}~{item['case_end']} "
+            f"tf_mode={item['tf_mode']} cmap={item['cmap']} "
+            f"output_root={item['output_root']} -> {item['config_path']}"
+        )
+
+
+def _run_generated_stack(summary: dict) -> list[dict]:
+    reports: list[dict] = []
+    for item in summary["items"]:
+        typer.echo(f"Running stack item [{item['index']:02d}] with config {item['config_path']}")
+        report = _run_generated_batch_config(item["config_path"])
+        _echo_batch_report(report, prefix=f"Stack item [{item['index']:02d}] completed.")
+        reports.append(report)
+    return reports
+
+
+def _echo_seg_batch_report(report: dict) -> None:
+    typer.echo(
+        f"Batch seg completed. batches={report['total_batches']} "
+        f"selected={report.get('requested_batch_index') or 'all'} "
+        f"cases={report['total_cases']} organs={report['total_organs']} "
+        f"ok={report['succeeded']} failed={report['failed']}"
+    )
+    if report.get("report_json"):
+        typer.echo(f"Batch seg report: {report['report_json']}")
 
 @app.callback()
 def main(verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")):
@@ -51,23 +106,21 @@ def run(
         )
         typer.echo("Pipeline completed successfully.")
     except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        # Raise to show traceback if verbose? 
-        # Typer handles exceptions but we want clean exit for users
-        sys.exit(1)
+        _exit_with_error(e)
 
 
 @app.command()
 def batch(
     config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
-    raw_root: Path = typer.Option(Path("raw"), "--raw-root", help="Root directory containing case folders"),
-    output_root: Path = typer.Option(Path("outputs"), "--output-root", help="Root directory for per-case outputs"),
-    input_mode: str = typer.Option("case", "--input-mode", help="Input discovery mode: case or dataset"),
-    case_glob: str = typer.Option("s*", "--case-glob", help="Glob used to discover case directories"),
+    raw_root: Optional[Path] = typer.Option(None, "--raw-root", help="Root directory containing case folders"),
+    output_root: Optional[Path] = typer.Option(None, "--output-root", help="Root directory for per-case outputs"),
+    case_glob: Optional[str] = typer.Option(None, "--case-glob", help="Glob used to discover case directories"),
+    case_range: Optional[str] = typer.Option(None, "--case-range", help="Case ID range like s0000~s0100"),
+    case_start: Optional[str] = typer.Option(None, "--case-start", help="Inclusive case ID lower bound, e.g. s0000"),
+    case_end: Optional[str] = typer.Option(None, "--case-end", help="Inclusive case ID upper bound, e.g. s0100"),
+    case_ids: Optional[str] = typer.Option(None, "--case-ids", help="Comma-separated case IDs to include, e.g. s0001,s0007"),
+    exclude_case_ids: Optional[str] = typer.Option(None, "--exclude-case-ids", help="Comma-separated case IDs to exclude"),
     filename: Optional[str] = typer.Option(None, "--filename", help="Optional fixed input filename inside each case directory"),
-    dataset_source_root: Optional[Path] = typer.Option(None, "--dataset-source-root", help="Single source root for dataset mode; points to either a VTI cache root or a RAW root"),
-    max_vti_parts: Optional[int] = typer.Option(None, "--max-vti-parts", help="Limit VTI parts per dataset in dataset mode"),
-    skip_existing: bool = typer.Option(False, "--skip-existing/--no-skip-existing", help="Skip cases whose output is already complete"),
     continue_on_error: bool = typer.Option(True, "--continue-on-error/--fail-fast", help="Continue batch processing when a case fails"),
     batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Number of cases per random batch"),
     shuffle: Optional[bool] = typer.Option(None, "--shuffle/--no-shuffle", help="Shuffle cases before grouping into batches"),
@@ -78,30 +131,90 @@ def batch(
     try:
         report = run_batch(
             config_path=str(config_path),
-            raw_root=str(raw_root),
-            output_root=str(output_root),
-            input_mode=input_mode,
+            raw_root=str(raw_root) if raw_root else None,
+            output_root=str(output_root) if output_root else None,
             case_glob=case_glob,
+            case_range=case_range,
+            case_start=case_start,
+            case_end=case_end,
+            case_ids=case_ids,
+            exclude_case_ids=exclude_case_ids,
             filename=filename,
-            dataset_source_root=str(dataset_source_root) if dataset_source_root else None,
-            max_vti_parts=max_vti_parts,
-            skip_existing=skip_existing,
             continue_on_error=continue_on_error,
             batch_size=batch_size,
             shuffle=shuffle,
             seed=seed,
             batch_index=batch_index,
         )
-        typer.echo(
-            f"Batch completed. batches={report['total_batches']} "
-            f"selected={report.get('requested_batch_index') or 'all'} "
-            f"cases={report['total_cases']} ok={report['succeeded']} skipped={report.get('skipped', 0)} failed={report['failed']}"
-        )
-        if report.get("report_json"):
-            typer.echo(f"Batch report: {report['report_json']}")
+        _echo_batch_report(report)
     except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_with_error(e)
+
+
+@app.command("batch-seg")
+def batch_seg(
+    config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
+    raw_root: Optional[Path] = typer.Option(None, "--raw-root", help="Root directory containing case folders"),
+    output_root: Optional[Path] = typer.Option(None, "--output-root", help="Root directory for per-organ outputs"),
+    case_glob: Optional[str] = typer.Option(None, "--case-glob", help="Glob used to discover case directories"),
+    seg_subdir: Optional[str] = typer.Option(None, "--seg-subdir", help="Subdirectory under each case containing organ volumes"),
+    organ_glob: Optional[str] = typer.Option(None, "--organ-glob", help="Glob used to discover organ files inside seg-subdir"),
+    case_range: Optional[str] = typer.Option(None, "--case-range", help="Case ID range like s0000~s0100"),
+    case_start: Optional[str] = typer.Option(None, "--case-start", help="Inclusive case ID lower bound, e.g. s0000"),
+    case_end: Optional[str] = typer.Option(None, "--case-end", help="Inclusive case ID upper bound, e.g. s0100"),
+    case_ids: Optional[str] = typer.Option(None, "--case-ids", help="Comma-separated case IDs to include"),
+    exclude_case_ids: Optional[str] = typer.Option(None, "--exclude-case-ids", help="Comma-separated case IDs to exclude"),
+    organ_ids: Optional[str] = typer.Option(None, "--organ-ids", help="Comma-separated organ names to include"),
+    exclude_organ_ids: Optional[str] = typer.Option(None, "--exclude-organ-ids", help="Comma-separated organ names to exclude"),
+    continue_on_error: bool = typer.Option(True, "--continue-on-error/--fail-fast", help="Continue batch processing when an organ volume fails"),
+    batch_size: Optional[int] = typer.Option(None, "--batch-size", help="Number of organ volumes per random batch"),
+    shuffle: Optional[bool] = typer.Option(None, "--shuffle/--no-shuffle", help="Shuffle organ volumes before grouping into batches"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed used when shuffling organ volumes into batches"),
+    batch_index: Optional[int] = typer.Option(None, "--batch-index", help="Only process one 1-based batch index"),
+):
+    """Run the pipeline for all segmented organ volumes under raw/sxxxx/<seg-subdir>."""
+    try:
+        report = run_batch_seg(
+            config_path=str(config_path),
+            raw_root=str(raw_root) if raw_root else None,
+            output_root=str(output_root) if output_root else None,
+            case_glob=case_glob,
+            seg_subdir=seg_subdir,
+            organ_glob=organ_glob,
+            case_range=case_range,
+            case_start=case_start,
+            case_end=case_end,
+            case_ids=case_ids,
+            exclude_case_ids=exclude_case_ids,
+            organ_ids=organ_ids,
+            exclude_organ_ids=exclude_organ_ids,
+            continue_on_error=continue_on_error,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            seed=seed,
+            batch_index=batch_index,
+        )
+        _echo_seg_batch_report(report)
+    except Exception as e:
+        _exit_with_error(e)
+
+@app.command("make-config-stack")
+def make_config_stack(
+    stack_path: Path = typer.Option(..., "--stack", "-s", help="Stack plan YAML path"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", help="Optional output directory for generated configs"),
+    run_now: bool = typer.Option(False, "--run", help="Run each generated config immediately after generation"),
+):
+    """Generate multiple batch YAMLs from one stack plan and optionally run them sequentially."""
+    try:
+        summary = generate_config_stack(
+            stack_path=str(stack_path),
+            output_dir=str(output_dir) if output_dir else None,
+        )
+        _echo_generated_stack(summary)
+        if run_now:
+            _run_generated_stack(summary)
+    except Exception as e:
+        _exit_with_error(e)
 
 @app.command("list")
 def list_plugins():
@@ -142,8 +255,7 @@ def inspect(
         typer.echo(f"Value Range: [{vol.data.min()}, {vol.data.max()}]")
         
     except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_with_error(e)
 
 
 @app.command("test-seg")
@@ -183,8 +295,7 @@ def test_segmentation(
             output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
             typer.echo(f"Wrote segmentation test result to {output_json}")
     except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        _exit_with_error(e)
 
 if __name__ == "__main__":
     app()

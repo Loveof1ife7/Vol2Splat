@@ -21,6 +21,24 @@ python -m vol2splat.cli batch \
 - `--config`：决定渲染、采样、导出行为的核心配置
 - `--output-root`：输出目录
 
+如果你现在是按 `raw/sxxxx/...` 这种病例目录跑批处理，也可以直接加病例筛选：
+
+```bash
+python -m vol2splat.cli batch \
+  --config configs/batch_medical_20.yaml \
+  --raw-root raw \
+  --output-root outputs \
+  --case-range s0000~s0100
+```
+
+也支持：
+
+- `--case-start s0000 --case-end s0100`
+- `--case-ids s0001,s0007,s0042`
+- `--exclude-case-ids s0005,s0006`
+
+同名参数也可写进配置文件的 `batch` 段。
+
 ---
 
 ## 2. 体渲染参数（`render`）如何影响结果

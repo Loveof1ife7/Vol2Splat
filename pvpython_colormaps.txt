@@ -1,0 +1,196 @@
+0	Cool to Warm
+1	Cool to Warm (Extended)
+2	Black-Body Radiation
+3	X Ray
+4	Inferno (matplotlib)
+5	Black, Blue and White
+6	Blue Orange (divergent)
+7	Viridis (matplotlib)
+8	Gray and Red
+9	Linear Green (Gr4L)
+10	Cold and Hot
+11	Blue - Green - Orange
+12	Rainbow Desaturated
+13	Yellow - Gray - Blue
+14	Rainbow Uniform
+15	Turbo
+16	Jet
+17	KAAMS
+18	Warm to Cool
+19	Warm to Cool (Extended)
+20	Grayscale
+21	Black, Orange and White
+22	Linear YGB 1211g
+23	Linear Blue (8_31f)
+24	Blue to Red Rainbow
+25	Rainbow Blended White
+26	Rainbow Blended Grey
+27	Rainbow Blended Black
+28	Blue to Yellow
+29	blot
+30	CIELab Blue to Red
+31	erdc_rainbow_bright
+32	erdc_rainbow_dark
+33	nic_CubicL
+34	nic_CubicYF
+35	gist_earth
+36	2hot
+37	erdc_red2yellow_BW
+38	erdc_marine2gold_BW
+39	erdc_blue2gold_BW
+40	erdc_sapphire2gold_BW
+41	erdc_red2purple_BW
+42	erdc_purple2pink_BW
+43	erdc_pbj_lin
+44	erdc_blue2green_muted
+45	erdc_blue2green_BW
+46	GREEN-WHITE_LINEAR
+47	erdc_green2yellow_BW
+48	blue2cyan
+49	erdc_blue2cyan_BW
+50	erdc_blue_BW
+51	BLUE-WHITE
+52	erdc_purple_BW
+53	erdc_magenta_BW
+54	magenta
+55	RED-PURPLE
+56	erdc_red_BW
+57	RED_TEMPERATURE
+58	erdc_orange_BW
+59	heated_object
+60	erdc_gold_BW
+61	erdc_brown_BW
+62	copper_Matlab
+63	pink_Matlab
+64	bone_Matlab
+65	Purples
+66	Blues
+67	Greens
+68	PuBu
+69	BuPu
+70	BuGn
+71	GnBu
+72	GnBuPu
+73	BuGnYl
+74	PuRd
+75	RdPu
+76	Oranges
+77	Reds
+78	RdOr
+79	BrOrYl
+80	RdOrYl
+81	blue2yellow
+82	erdc_blue2gold
+83	erdc_blue2yellow
+84	erdc_cyan2orange
+85	erdc_purple2green
+86	erdc_purple2green_dark
+87	BuRd
+88	Spectral_lowBlue
+89	GnRP
+90	GYPi
+91	GnYlRd
+92	GBBr
+93	PuOr
+94	PRGn
+95	PiYG
+96	OrPu
+97	BrBG
+98	erdc_divHi_purpleGreen
+99	erdc_divHi_purpleGreen_dim
+100	erdc_divLow_icePeach
+101	erdc_divLow_purpleGreen
+102	Haze_green
+103	Haze_lime
+104	Haze
+105	Haze_cyan
+106	nic_Edge
+107	erdc_iceFire_H
+108	erdc_iceFire_L
+109	hsv
+110	hue_L60
+111	GyRd
+112	Spectrum
+113	Warm
+114	Cool
+115	Blues
+116	Wild Flower
+117	Citrus
+118	Brewer Diverging Purple-Orange (11)
+119	Brewer Diverging Purple-Orange (10)
+120	Brewer Diverging Purple-Orange (9)
+121	Brewer Diverging Purple-Orange (8)
+122	Brewer Diverging Purple-Orange (7)
+123	Brewer Diverging Purple-Orange (6)
+124	Brewer Diverging Purple-Orange (5)
+125	Brewer Diverging Purple-Orange (4)
+126	Brewer Diverging Purple-Orange (3)
+127	Brewer Diverging Spectral (11)
+128	Brewer Diverging Spectral (10)
+129	Brewer Diverging Spectral (9)
+130	Brewer Diverging Spectral (8)
+131	Brewer Diverging Spectral (7)
+132	Brewer Diverging Spectral (6)
+133	Brewer Diverging Spectral (5)
+134	Brewer Diverging Spectral (4)
+135	Brewer Diverging Spectral (3)
+136	Brewer Diverging Brown-Blue-Green (11)
+137	Brewer Diverging Brown-Blue-Green (10)
+138	Brewer Diverging Brown-Blue-Green (9)
+139	Brewer Diverging Brown-Blue-Green (8)
+140	Brewer Diverging Brown-Blue-Green (7)
+141	Brewer Diverging Brown-Blue-Green (6)
+142	Brewer Diverging Brown-Blue-Green (5)
+143	Brewer Diverging Brown-Blue-Green (4)
+144	Brewer Diverging Brown-Blue-Green (3)
+145	Brewer Sequential Blue-Green (9)
+146	Brewer Sequential Blue-Green (8)
+147	Brewer Sequential Blue-Green (7)
+148	Brewer Sequential Blue-Green (6)
+149	Brewer Sequential Blue-Green (5)
+150	Brewer Sequential Blue-Green (4)
+151	Brewer Sequential Blue-Green (3)
+152	Brewer Sequential Yellow-Orange-Brown (9)
+153	Brewer Sequential Yellow-Orange-Brown (8)
+154	Brewer Sequential Yellow-Orange-Brown (7)
+155	Brewer Sequential Yellow-Orange-Brown (6)
+156	Brewer Sequential Yellow-Orange-Brown (5)
+157	Brewer Sequential Yellow-Orange-Brown (4)
+158	Brewer Sequential Yellow-Orange-Brown (3)
+159	Brewer Sequential Blue-Purple (9)
+160	Brewer Sequential Blue-Purple (8)
+161	Brewer Sequential Blue-Purple (7)
+162	Brewer Sequential Blue-Purple (6)
+163	Brewer Sequential Blue-Purple (5)
+164	Brewer Sequential Blue-Purple (4)
+165	Brewer Sequential Blue-Purple (3)
+166	Brewer Qualitative Accent
+167	Brewer Qualitative Dark2
+168	Brewer Qualitative Set2
+169	Brewer Qualitative Pastel2
+170	Brewer Qualitative Pastel1
+171	Brewer Qualitative Set1
+172	Brewer Qualitative Paired
+173	Brewer Qualitative Set3
+174	Traffic Lights
+175	Traffic Lights For Deuteranopes
+176	Traffic Lights For Deuteranopes 2
+177	Muted Blue-Green
+178	Green-Blue Asymmetric Divergent (62Blbc)
+179	Asymmetrical Earth Tones (6_21b)
+180	Yellow 15
+181	Magma (matplotlib)
+182	Plasma (matplotlib)
+183	Cividis
+184	BlueObeliskElements
+185	KAAMS Step
+186	Spectrum Step
+187	Warm Step
+188	Cool Step
+189	Blues Step
+190	Wild Flower Step
+191	Citrus Step
+192	Traffic Lights Step
+193	Traffic Lights For Deuteranopes Step
+194	Traffic Lights For Deuteranopes 2 Step
+195	Fast

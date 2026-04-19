@@ -1,4 +1,5 @@
 # src/dataset_generator/utils.py
+import json
 import numpy as np
 import re, math
 from typing import List, Optional
@@ -40,6 +41,19 @@ def parse_vec3(s, default):
 
 def parse_cmaps(s):
     if not s: return []
+    # `cmaps` may already be a Python list from YAML, or a JSON-encoded list passed
+    # through the CLI to preserve preset names that contain commas.
+    if isinstance(s, list):
+        return [str(item).strip() for item in s if str(item).strip()]
+    if isinstance(s, str):
+        text = s.strip()
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                items = json.loads(text)
+                if isinstance(items, list):
+                    return [str(item).strip() for item in items if str(item).strip()]
+            except Exception:
+                pass
     items = [t.strip() for t in re.split(r'[,\n]+', s) if t.strip()]
     seen, out = set(), []
     for it in items:
@@ -122,4 +136,3 @@ def compute_hist_eq_band_edges(src, array_name, arr_min, arr_max, n_b):
     print("[info] 基于直方图计算出的新分段边界:")
     print("    " + ", ".join([f"{x:.3g}" for x in band_edges]))
     return band_edges
-

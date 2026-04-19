@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 from glob import glob
@@ -53,7 +54,12 @@ class PVEngineRenderer(Renderer):
                     flags.append(flag)
                 continue
             if isinstance(value, (list, tuple)):
-                flags.extend([flag, ','.join(str(v) for v in value)])
+                # Colormap preset names may contain commas (for example "Black, Blue and White"),
+                # so serialize `cmaps` as JSON to preserve item boundaries across the CLI hop.
+                if key == 'cmaps':
+                    flags.extend([flag, json.dumps([str(v) for v in value], ensure_ascii=False)])
+                else:
+                    flags.extend([flag, ','.join(str(v) for v in value)])
                 continue
             flags.extend([flag, str(value)])
         return flags
