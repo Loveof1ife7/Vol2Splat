@@ -24,7 +24,7 @@ def discover_tf_json_paths(render_output_dir: str) -> List[str]:
     paths = []
     if os.path.exists(direct):
         paths.append(direct)
-    paths.extend(sorted(glob(os.path.join(render_output_dir, "TF*", "tf_config.json"))))
+    paths.extend(sorted(glob(os.path.join(render_output_dir, "*", "tf_config.json"))))
     return [os.path.abspath(path) for path in paths]
 
 
@@ -34,8 +34,6 @@ def resolve_tf_json_paths(cfg: Dict) -> List[str]:
         return [os.path.abspath(explicit)]
     render_result = cfg.get("render_result")
     render_output_dir = cfg.get("render_output_dir")
-    if render_output_dir:
-        return discover_tf_json_paths(render_output_dir)
     if isinstance(render_result, dict):
         tf_outputs = render_result.get("tf_outputs")
         if tf_outputs:
@@ -43,6 +41,9 @@ def resolve_tf_json_paths(cfg: Dict) -> List[str]:
         tf_configs = render_result.get("tf_configs")
         if tf_configs:
             return [os.path.abspath(path) for path in tf_configs]
+    if render_output_dir:
+        return discover_tf_json_paths(render_output_dir)
+    if isinstance(render_result, dict):
         output_dir = render_result.get("output_dir")
         if output_dir:
             return discover_tf_json_paths(output_dir)

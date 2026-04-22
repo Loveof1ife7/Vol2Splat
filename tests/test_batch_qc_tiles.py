@@ -3,12 +3,13 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from vol2splat.batch import assign_cases_to_batches, discover_case_inputs, prepare_case_config_data
+from vol2splat.batch import assign_cases_to_batches, discover_case_inputs, filter_case_infos, prepare_case_config_data, run_batch
 from vol2splat.io.tiling import maybe_tile_input_volume
 from vol2splat.rendering.qc import run_render_qc
 from vol2splat.core.types import Volume
@@ -61,10 +62,10 @@ class TestBatchQCTiles(unittest.TestCase):
             prepared = prepare_case_config_data(base_config, assigned[0], output_root=os.path.join(tmpdir, "outputs"))
             self.assertEqual(prepared["io"]["path"], cases[0]["input_path"])
             self.assertEqual(assigned[0]["batch_id"], "batch_0001")
-            self.assertTrue(prepared["preprocess"][0]["vti_path"].endswith("batch_0001/s0001/ct_canonical.vti"))
-            self.assertTrue(prepared["io"]["tiling"]["output_dir"].endswith("batch_0001/s0001/input_tiles"))
-            self.assertTrue(prepared["render"]["path"].endswith("batch_0001/s0001"))
-            self.assertTrue(prepared["export"]["path"].endswith("batch_0001/s0001"))
+            self.assertTrue(prepared["preprocess"][0]["vti_path"].endswith("s0001/ct_canonical.vti"))
+            self.assertTrue(prepared["io"]["tiling"]["output_dir"].endswith("s0001/input_tiles"))
+            self.assertTrue(prepared["render"]["path"].endswith("s0001"))
+            self.assertTrue(prepared["export"]["path"].endswith("s0001"))
 
     def test_assign_cases_to_batches_shuffles_repeatably(self):
         cases = [{"case_id": f"s{i:04d}", "input_name": "ct.nii.gz", "input_path": f"/tmp/s{i:04d}/ct.nii.gz", "input_stem": "ct"} for i in range(205)]
@@ -75,6 +76,84 @@ class TestBatchQCTiles(unittest.TestCase):
         self.assertEqual(assigned_1[99]["batch_id"], "batch_0001")
         self.assertEqual(assigned_1[100]["batch_id"], "batch_0002")
         self.assertEqual(assigned_1[-1]["batch_id"], "batch_0003")
+
+    def test_discover_case_inputs_supports_case_range(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_root = os.path.join(tmpdir, "raw")
+            for case_id in ("s0001", "s0002", "s0100", "s0101", "x0001"):
+                os.makedirs(os.path.join(raw_root, case_id), exist_ok=True)
+                open(os.path.join(raw_root, case_id, "ct.nii.gz"), "wb").close()
+
+            cases = discover_case_inputs(raw_root, reader="nii", case_range="s0002~s0100")
+            self.assertEqual([case["case_id"] for case in cases], ["s0002", "s0100"])
+
+    def test_filter_case_infos_supports_include_and_exclude_lists(self):
+        cases = [
+            {"case_id": "s0001", "input_name": "ct.nii.gz", "input_path": "/tmp/s0001/ct.nii.gz", "input_stem": "ct"},
+            {"case_id": "s0002", "input_name": "ct.nii.gz", "input_path": "/tmp/s0002/ct.nii.gz", "input_stem": "ct"},
+            {"case_id": "s0003", "input_name": "ct.nii.gz", "input_path": "/tmp/s0003/ct.nii.gz", "input_stem": "ct"},
+        ]
+
+        filtered = filter_case_infos(
+            cases,
+            case_ids="s0001,s0002,s9999",
+            exclude_case_ids=["s0002"],
+        )
+
+        self.assertEqual([case["case_id"] for case in filtered], ["s0001"])
+
+    def test_run_batch_reads_output_root_from_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_root = os.path.join(tmpdir, "raw")
+            os.makedirs(os.path.join(raw_root, "s0001"), exist_ok=True)
+            open(os.path.join(raw_root, "s0001", "ct.nii.gz"), "wb").close()
+
+            config_path = os.path.join(tmpdir, "batch.yaml")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "batch": {
+                            "size": 10,
+                            "shuffle": False,
+                            "seed": 7,
+                            "raw_root": raw_root,
+                            "output_root": os.path.join(tmpdir, "custom_outputs"),
+                        },
+                        "io": {"reader": "nii", "path": "placeholder.nii.gz"},
+                        "preprocess": [{"name": "canonicalize", "write_vti": True}],
+                        "sampling": {"name": "uniform", "n_points": 8},
+                        "render": {"renderer": "pv_engine", "qc": {"enabled": True}},
+                        "export": {"writer": "ply", "path": "outputs/s0000"},
+                    },
+                    f,
+                )
+
+            def fake_run_pipeline_context(_input_path, _output_path, cfg):
+                return {
+                    "canonical_vti_path": cfg.preprocess[0].params["vti_path"],
+                    "written_paths": [os.path.join(cfg.export.path, "points.ply")],
+                    "render_result": {"qc": {"failed_tf_names": [], "passed_tf_names": ["TF01"]}},
+                }
+
+            with patch("vol2splat.batch.run_pipeline_context", side_effect=fake_run_pipeline_context):
+                report = run_batch(config_path=config_path)
+
+            self.assertTrue(report["output_root"].endswith("custom_outputs"))
+            self.assertTrue(report["cases"][0]["written_paths"][0].endswith("custom_outputs/s0001/points.ply"))
+            report_json_path = os.path.join(tmpdir, "custom_outputs", "batch_report.json")
+            report_md_path = os.path.join(tmpdir, "custom_outputs", "batch_report.md")
+            with open(report_json_path, "r", encoding="utf-8") as f:
+                persisted_report = json.load(f)
+            self.assertNotIn("batch_size", persisted_report)
+            self.assertNotIn("total_batches", persisted_report)
+            self.assertNotIn("total_cases", persisted_report)
+            self.assertNotIn("batch_id", persisted_report["cases"][0])
+            with open(report_md_path, "r", encoding="utf-8") as f:
+                report_md = f.read()
+            self.assertNotIn("batch_size", report_md)
+            self.assertNotIn("total_cases", report_md)
+            self.assertNotIn("batch_0001", report_md)
+            self.assertIn("| Case | Status | Input | Failed TF | Error |", report_md)
 
     @unittest.skipIf(Image is None, "Pillow is required for render QC test")
     def test_render_qc_marks_dark_tf_as_failed(self):

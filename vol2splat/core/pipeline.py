@@ -1,5 +1,7 @@
 import os
+import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict
 from .types import Volume, PointCloud
 
@@ -87,7 +89,7 @@ def _resolve_tf_sampling_tasks(sampler_name: str, sampler_params: Dict[str, Any]
     render_result = sampler_params.get('render_result')
     if isinstance(render_result, dict):
         tf_outputs = render_result.get('tf_outputs') or []
-        if len(tf_outputs) > 1:
+        if tf_outputs:
             tasks = []
             for item in tf_outputs:
                 task = dict(sampler_params)
@@ -116,12 +118,7 @@ def _resolve_tf_sampling_tasks(sampler_name: str, sampler_params: Dict[str, Any]
 
 
 def _resolve_export_path_for_task(base_path: str | None, writer_name: str, sampler_task: Dict[str, Any], render_result: Any, multi_tf_mode: bool) -> str | None:
-    if not multi_tf_mode:
-        return _normalize_export_path(base_path, writer_name)
-    tf_name = sampler_task.get('tf_name')
     tf_output_dir = sampler_task.get('tf_output_dir')
-    if not tf_name:
-        return base_path
     if tf_output_dir:
         if base_path:
             _, file_name = os.path.split(base_path)
@@ -130,6 +127,11 @@ def _resolve_export_path_for_task(base_path: str | None, writer_name: str, sampl
                 return os.path.join(tf_output_dir, file_name)
             return os.path.join(tf_output_dir, _default_export_filename(writer_name))
         return os.path.join(tf_output_dir, _default_export_filename(writer_name))
+    if not multi_tf_mode:
+        return _normalize_export_path(base_path, writer_name)
+    tf_name = sampler_task.get('tf_name')
+    if not tf_name:
+        return base_path
     if base_path:
         parent_dir, file_name = os.path.split(base_path)
         root, ext = os.path.splitext(file_name)
@@ -153,6 +155,60 @@ def _run_render_qc_if_enabled(render_result: Any, qc_cfg: Dict[str, Any] | None)
     qc_result = run_render_qc(render_result, qc_cfg)
     render_result['qc'] = qc_result
     return qc_result
+
+
+def _infer_scene_id_from_volume(vol: Volume) -> str | None:
+    metadata = getattr(vol, 'metadata', None)
+    extra = getattr(metadata, 'extra', {}) if metadata is not None else {}
+    for key in ('scene_id', 'case_id'):
+        value = extra.get(key)
+        if isinstance(value, str) and re.fullmatch(r's\d+', value, flags=re.IGNORECASE):
+            return value
+
+    source_path = getattr(metadata, 'source_path', None)
+    if not source_path:
+        return None
+    for part in Path(source_path).resolve().parts[::-1]:
+        if re.fullmatch(r's\d+', part, flags=re.IGNORECASE):
+            return part
+    return None
+
+
+def _discover_scene_tf_jsons(tf_json_root: str, scene_id: str, tf_json_glob: str = '*.json') -> list[str]:
+    root = Path(tf_json_root).resolve()
+    scene_dir = root / scene_id
+    if scene_dir.is_dir():
+        return sorted(str(path.resolve()) for path in scene_dir.glob(tf_json_glob) if path.is_file())
+    return sorted(str(path.resolve()) for path in root.glob(f'{scene_id}_*.json') if path.is_file())
+
+
+def _resolve_render_params_from_volume(vol: Volume, render_params: Dict[str, Any]) -> Dict[str, Any]:
+    resolved = dict(render_params)
+    tf_json_root = resolved.pop('tf_json_root', None)
+    tf_json_glob = str(resolved.pop('tf_json_glob', '*.json'))
+    if tf_json_root is None:
+        return resolved
+    if resolved.get('tf_json') is not None or resolved.get('tf_jsons') is not None:
+        return resolved
+
+    scene_id = _infer_scene_id_from_volume(vol)
+    metadata = getattr(vol, 'metadata', None)
+    extra = getattr(metadata, 'extra', {}) if metadata is not None else {}
+    extra['scene_id'] = scene_id
+    if not scene_id:
+        return resolved
+
+    tf_jsons = _discover_scene_tf_jsons(str(tf_json_root), scene_id, tf_json_glob=tf_json_glob)
+    extra['scene_transfer_functions'] = {
+        'scene_id': scene_id,
+        'tf_json_root': os.path.abspath(str(tf_json_root)),
+        'tf_json_glob': tf_json_glob,
+        'tf_jsons': tf_jsons,
+    }
+    if tf_jsons:
+        print(f"Discovered {len(tf_jsons)} GUI TF JSON(s) for {scene_id} from {tf_json_root}")
+        resolved['tf_jsons'] = tf_jsons
+    return resolved
 
 
 def _filter_sampling_tasks_by_qc(sampling_tasks: list[Dict[str, Any]], render_result: Any) -> list[Dict[str, Any]]:
@@ -190,7 +246,7 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
             raise ValueError("Render stage requires preprocess to produce 'canonical_vti_path'")
         renderer = get_renderer(config.render.renderer)()
         print(f'Rendering using {config.render.renderer}...')
-        render_params = dict(config.render.params)
+        render_params = _resolve_render_params_from_volume(vol, dict(config.render.params))
         render_qc_cfg = _scope_qc_cfg_for_tile(render_params.pop('qc', None), tile_name)
         render_path = _scope_path_for_tile(config.render.path, tile_name)
         render_result = renderer.render(canonical_vti_path, path=render_path, **render_params)

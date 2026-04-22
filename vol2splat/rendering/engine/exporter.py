@@ -2,6 +2,7 @@ import os, json
 import numpy as np
 from typing import Tuple, List
 import argparse
+from pathlib import Path
 
 # 导入我们包中的其他类
 from .volume_renderer import VolumeRenderer
@@ -22,6 +23,42 @@ class MultiViewExporter:
         # 初始化 anysplat 相关状态
         self.anysplat_scene_idx = 0
         self.anysplat_scene_names = []
+
+    def _parse_cli_list(self, value):
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        if not text:
+            return []
+        if text.startswith("[") and text.endswith("]"):
+            try:
+                items = json.loads(text)
+                if isinstance(items, list):
+                    return [str(item).strip() for item in items if str(item).strip()]
+            except Exception:
+                pass
+        return [item.strip() for item in text.split(",") if item.strip()]
+
+    def _resolve_explicit_tf_jobs(self):
+        tf_jsons = []
+        tf_jsons.extend(self._parse_cli_list(getattr(self.args, "tf_jsons", None)))
+        tf_json = getattr(self.args, "tf_json", None)
+        if tf_json:
+            tf_jsons.append(str(tf_json).strip())
+        if not tf_jsons:
+            return []
+
+        jobs = []
+        explicit_name = str(getattr(self.args, "tf_name", "") or "").strip()
+        for idx, tf_json_path in enumerate(tf_jsons, start=1):
+            tf_name = explicit_name if explicit_name and len(tf_jsons) == 1 else Path(tf_json_path).stem
+            jobs.append({
+                "tf_json": os.path.abspath(tf_json_path),
+                "tf_name": tf_name or f"tf_{idx:02d}",
+            })
+        return jobs
 
     def _convert_c2w_for_output(self, c2w: np.ndarray) -> np.ndarray:
         if self.camera_convention == "opengl":
@@ -52,49 +89,66 @@ class MultiViewExporter:
         # )
         # 2. 尝试启用 IndeX
         self.renderer.try_enable_index()
-
-        # 3. 主循环
-        print(f"\n[Exporter] Starting main render loop for {len(self.tf_manager.cmaps)} TF(s)...")
-        for idx, cmap, tf_name in self.tf_manager:
-            
-            out_dir = os.path.join(self.args.out, tf_name)
-            os.makedirs(out_dir, exist_ok=True)
-            
-            print(f"\n--- Processing TF {idx}/{len(self.tf_manager.cmaps)}: {tf_name} (CMap: {cmap}) ---")
-            pts = self.tf_manager.make_tf_points(idx=idx, n_b=self.args.band_count, 
-            arr_min=self.renderer.arr_min, arr_max=self.renderer.arr_max, 
-                                 mode=self.args.tf_mode)
-            # 3a. 应用 TF
-            self.renderer.apply_tf(
-                cmap=cmap, 
-                idx=idx, 
-                n_bands=int(self.args.band_count), 
-               pts = pts,
-                opacity_only=self.args.opacity_only
-            )
-            
-            # 3b. 导出 TF JSON（若只关心 anysplat，可跳过）
-            if not (getattr(self.args, "anysplat_root", None) and getattr(self.args, "anysplat_only", False)):
+        explicit_tf_jobs = self._resolve_explicit_tf_jobs()
+        if explicit_tf_jobs:
+            print(f"\n[Exporter] Starting ParaView JSON TF loop for {len(explicit_tf_jobs)} TF(s)...")
+            for job in explicit_tf_jobs:
+                tf_json = job["tf_json"]
+                tf_name = job["tf_name"]
+                out_dir = os.path.join(self.args.out, tf_name)
+                os.makedirs(out_dir, exist_ok=True)
+                print(f"\n--- Processing GUI TF: {tf_name} ({tf_json}) ---")
+                self.renderer.apply_tf_from_paraview_json(tf_json)
                 self.renderer.export_fused_tf_json(out_dir)
-
-            # 3c. 渲染和拆分数据集
-            frames_train, frames_test, frames_val = self._render_and_split_dataset(tf_name, out_dir, pts, band_idx=idx) # <--- **修改这里**
-
-            # 3d. 导出 Transforms JSON
-            if getattr(self.args, "anysplat_root", None):
-                # 如果指定了 anysplat_root，直接导出为 anysplat 格式
-                self._export_anysplat_format(tf_name, frames_train, frames_test, frames_val)
-            else:
-                # 否则导出 Vol2GS 格式
+                frames_train, frames_test, frames_val = self._render_and_split_dataset(tf_name, out_dir)
                 self._export_transforms_json(out_dir, frames_train, frames_test, frames_val)
-            
-        # 如果指定了 anysplat_root，在最后写入索引文件
-        if getattr(self.args, "anysplat_root", None) and self.anysplat_scene_names:
-            self._write_anysplat_index()
-            
-        print("\n[Exporter] All tasks completed.")
 
-    def _render_and_split_dataset(self, tf_name: str, out_dir: str, pts: List[float], band_idx: int) -> Tuple[List, List, List]: # <--- **修改签名**
+            if getattr(self.args, "anysplat_root", None) and self.anysplat_scene_names:
+                self._write_anysplat_index()
+            print("\n[Exporter] TF json tasks completed.")
+
+        else:
+            print(f"\n[Exporter] Starting main render loop for {len(self.tf_manager.cmaps)} TF(s)...")
+            for idx, cmap, tf_name in self.tf_manager:
+                
+                out_dir = os.path.join(self.args.out, tf_name)
+                os.makedirs(out_dir, exist_ok=True)
+                
+                print(f"\n--- Processing TF {idx}/{len(self.tf_manager.cmaps)}: {tf_name} (CMap: {cmap}) ---")
+                pts = self.tf_manager.make_tf_points(idx=idx, n_b=self.args.band_count, 
+                arr_min=self.renderer.arr_min, arr_max=self.renderer.arr_max, 
+                                    mode=self.args.tf_mode)
+                # 3a. 应用 TF
+                self.renderer.apply_tf(
+                    cmap=cmap, 
+                    idx=idx, 
+                    n_bands=int(self.args.band_count), 
+                    pts = pts,
+                    opacity_only=self.args.opacity_only
+                )
+                
+                # 3b. 导出 TF JSON（若只关心 anysplat，可跳过）
+                if not (getattr(self.args, "anysplat_root", None) and getattr(self.args, "anysplat_only", False)):
+                    self.renderer.export_fused_tf_json(out_dir)
+
+                # 3c. 渲染和拆分数据集
+                frames_train, frames_test, frames_val = self._render_and_split_dataset(tf_name, out_dir, pts, band_idx=idx) # <--- **修改这里**
+
+                # 3d. 导出 Transforms JSON
+                if getattr(self.args, "anysplat_root", None):
+                    # 如果指定了 anysplat_root，直接导出为 anysplat 格式
+                    self._export_anysplat_format(tf_name, frames_train, frames_test, frames_val)
+                else:
+                    # 否则导出 Vol2GS 格式
+                    self._export_transforms_json(out_dir, frames_train, frames_test, frames_val)
+                    
+                # 如果指定了 anysplat_root，在最后写入索引文件
+                if getattr(self.args, "anysplat_root", None) and self.anysplat_scene_names:
+                    self._write_anysplat_index()
+                    
+                print("\n[Exporter] All tasks completed.")
+
+    def _render_and_split_dataset(self, tf_name: str, out_dir: str, pts: List[float] | None = None, band_idx: int | None = None) -> Tuple[List, List, List]:
         
         """循环渲染所有位姿，应用归一化，保存图片并返回帧数据。"""
         frames_train, frames_test, frames_val = [], [], []
@@ -140,7 +194,7 @@ class MultiViewExporter:
         pose_type = "Global"
         
         # 检查是否开启自适应，并且该 Band 有空间信息
-        if getattr(self.args, 'adaptive_camera', 0) > 0:
+        if getattr(self.args, 'adaptive_camera', 0) > 0 and band_idx is not None:
             if hasattr(self.tf_manager, 'band_spatial_info') and band_idx in self.tf_manager.band_spatial_info:
                 info = self.tf_manager.band_spatial_info[band_idx]
                 # 生成聚焦位姿

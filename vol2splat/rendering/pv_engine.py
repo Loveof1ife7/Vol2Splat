@@ -55,8 +55,8 @@ class PVEngineRenderer(Renderer):
                 continue
             if isinstance(value, (list, tuple)):
                 # Colormap preset names may contain commas (for example "Black, Blue and White"),
-                # so serialize `cmaps` as JSON to preserve item boundaries across the CLI hop.
-                if key == 'cmaps':
+                # so serialize list-like arguments that cross the CLI boundary as JSON.
+                if key in {'cmaps', 'tf_jsons'}:
                     flags.extend([flag, json.dumps([str(v) for v in value], ensure_ascii=False)])
                 else:
                     flags.extend([flag, ','.join(str(v) for v in value)])
@@ -75,7 +75,7 @@ class PVEngineRenderer(Renderer):
                 'tf_dir': os.path.abspath(out_dir),
             })
 
-        for path in sorted(glob(os.path.join(out_dir, 'TF*', 'tf_config.json'))):
+        for path in sorted(glob(os.path.join(out_dir, '*', 'tf_config.json'))):
             tf_json = os.path.abspath(path)
             tf_dir = os.path.dirname(tf_json)
             outputs.append({

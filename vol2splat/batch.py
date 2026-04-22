@@ -338,28 +338,45 @@ def _report_paths(output_root: str) -> tuple[str, str]:
     return (os.path.abspath(json_path), os.path.abspath(md_path))
 
 
+def _sanitize_case_entry_for_report(entry: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = dict(entry)
+    sanitized.pop("batch_id", None)
+    sanitized.pop("batch_index", None)
+    sanitized.pop("batch_case_index", None)
+    return sanitized
+
+
+def _sanitize_report_for_persistence(report: Dict[str, Any]) -> Dict[str, Any]:
+    # Keep the file-based report focused on QC results instead of scheduler metadata.
+    return {
+        "config_path": report["config_path"],
+        "raw_root": report["raw_root"],
+        "output_root": report["output_root"],
+        "case_range": report.get("case_range"),
+        "case_start": report.get("case_start"),
+        "case_end": report.get("case_end"),
+        "succeeded": report["succeeded"],
+        "failed": report["failed"],
+        "cases": [_sanitize_case_entry_for_report(item) for item in report["cases"]],
+    }
+
+
 def _build_markdown_report_lines(report: Dict[str, Any]) -> List[str]:
     lines = [
         "# Batch Report",
         "",
-        f"- total_cases: {report['total_cases']}",
-        f"- total_batches: {report.get('total_batches', 0)}",
-        f"- batch_size: {report.get('batch_size', '-')}",
-        f"- shuffle: {report.get('shuffle', '-')}",
-        f"- seed: {report.get('seed', '-')}",
         f"- succeeded: {report['succeeded']}",
         f"- failed: {report['failed']}",
         "",
-        "| Batch | Case | Status | Input | QC Failed TF | Error |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Case | Status | Input | Failed TF | Error |",
+        "| --- | --- | --- | --- | --- |",
     ]
 
     for item in report["cases"]:
         qc_failed = ",".join(item.get("failed_tf_names", [])) if item.get("failed_tf_names") else "-"
         error = item.get("error", "-")
         lines.append(
-            f"| {item.get('batch_id', '-')} | {item['case_id']} | {item['status']} | "
-            f"{item['input_name']} | {qc_failed} | {error} |"
+            f"| {item['case_id']} | {item['status']} | {item['input_name']} | {qc_failed} | {error} |"
         )
     return lines
 
@@ -367,12 +384,13 @@ def _build_markdown_report_lines(report: Dict[str, Any]) -> List[str]:
 def _write_batch_reports(output_root: str, report: Dict[str, Any]) -> None:
     json_path, md_path = _report_paths(output_root)
     os.makedirs(os.path.abspath(output_root), exist_ok=True)
+    persisted_report = _sanitize_report_for_persistence(report)
 
     with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, ensure_ascii=False)
+        json.dump(persisted_report, f, indent=2, ensure_ascii=False)
 
     with open(md_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(_build_markdown_report_lines(report)) + "\n")
+        f.write("\n".join(_build_markdown_report_lines(persisted_report)) + "\n")
 
     report["report_json"] = json_path
     report["report_md"] = md_path

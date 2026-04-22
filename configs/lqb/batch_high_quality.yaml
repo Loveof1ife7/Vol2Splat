@@ -1,19 +1,15 @@
 batch:
-  size: 20
-  shuffle: false
-  seed: 7
-  # optional: only process a case ID range
-  case_range: s0000~s0000
-  case_start: s0000
-  case_end: s0000
-  # optional: only include or exclude specific cases
-  # case_ids: [s0001, s0007, s0042]
-  # exclude_case_ids: [s0005]
-
+   case_ids:
+    - s0244
+    - s0652
+    - s0693
+    - s0703
+    - s1009
+    - s1073
+    - s1348
 io:
   reader: nii
   path: raw/{case_id}/ct.nii.gz
-
 preprocess:
 - name: canonicalize
   backend: torch
@@ -21,36 +17,25 @@ preprocess:
   pad_to_cube: true
   write_vti: true
   vti_path: outputs/{batch_id}/{case_id}/{input_stem}_canonical.vti
-
 render:
   path: outputs/{batch_id}/{case_id}
-
   renderer: pv_engine
   executable: pvpython
-
   num: 84
   test_num: 20
   w: 512
   h: 512
-  band_count: 10
-  opaque_unit: 3.0
+  opaque_unit: 2.0
   scene_bbox_size: 2.6
-  opacity_scale: 0.1
-
-  # Single-peak transfer function
-  tf_mode: linear_gs
-  cmaps:
-    - Black, Blue and White
-  hist_eq: false
   camera_convention: opencv
-
+  tf_json_root: raw/high_quality
+  
   qc:
     enabled: true
     skip_failed_tf: true
     min_nonzero_ratio: 0.01
     min_mean_intensity: 0.01
     min_intensity_std: 0.005
-
 sampling:
   name: opacity
   n_points: 100000
@@ -60,16 +45,12 @@ sampling:
   uniform_stride: auto
   alpha_threshold: 0.0
   jitter: true
-
   anisotropic_init: true
   aniso_field: alpha
   aniso_voxel_size_mode: mean_spacing
-
   aniso_tangent_scale_mul: 1.2
   aniso_normal_scale_mul: 0.1
-  aniso_min_linear_scale: 1.0e-6
-
-
+  aniso_min_linear_scale: 1.0e-06
 export:
   writer: gs_ply
   params:

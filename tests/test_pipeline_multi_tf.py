@@ -17,7 +17,9 @@ from vol2splat.core.types import PointCloud, Volume
 
 class DummyReader(Reader):
     def read(self, path: str, **kwargs) -> Volume:
-        return Volume(data=np.zeros((8, 8, 8), dtype=np.float32), spacing=(1.0, 1.0, 1.0))
+        vol = Volume(data=np.zeros((8, 8, 8), dtype=np.float32), spacing=(1.0, 1.0, 1.0))
+        vol.metadata.source_path = os.path.abspath(path)
+        return vol
 
 
 class MarkCanonicalStage(Stage):
@@ -53,6 +55,54 @@ class DummyRenderer(Renderer):
         }
 
 
+class DummySceneJsonRenderer(Renderer):
+    def render(self, canonical_vti_path: str, path: str = None, **kwargs):
+        out_dir = os.path.abspath(path)
+        tf_jsons = kwargs.get("tf_jsons") or []
+        tf_outputs = []
+        for tf_json in tf_jsons:
+            tf_name = os.path.splitext(os.path.basename(tf_json))[0]
+            tf_dir = os.path.join(out_dir, tf_name)
+            os.makedirs(tf_dir, exist_ok=True)
+            fused_json = os.path.join(tf_dir, "tf_config.json")
+            with open(fused_json, "w", encoding="utf-8") as f:
+                json.dump(
+                    {"data_range": [0.0, 1.0], "control_points": [[0.0, 0, 0, 0, 0], [1.0, 1, 1, 1, 1]]},
+                    f,
+                )
+            tf_outputs.append({"tf_name": tf_name, "tf_json": fused_json, "tf_dir": tf_dir})
+        return {
+            "output_dir": out_dir,
+            "canonical_vti_path": canonical_vti_path,
+            "tf_outputs": tf_outputs,
+            "tf_configs": [item["tf_json"] for item in tf_outputs],
+            "render_world_transform": {"scale_factor": 1.0, "offset": [0.0, 0.0, 0.0]},
+        }
+
+
+class DummySingleSceneJsonRenderer(Renderer):
+    def render(self, canonical_vti_path: str, path: str = None, **kwargs):
+        out_dir = os.path.abspath(path)
+        tf_jsons = kwargs.get("tf_jsons") or []
+        tf_json = tf_jsons[0]
+        tf_name = os.path.splitext(os.path.basename(tf_json))[0]
+        tf_dir = os.path.join(out_dir, tf_name)
+        os.makedirs(tf_dir, exist_ok=True)
+        fused_json = os.path.join(tf_dir, "tf_config.json")
+        with open(fused_json, "w", encoding="utf-8") as f:
+            json.dump(
+                {"data_range": [0.0, 1.0], "control_points": [[0.0, 0, 0, 0, 0], [1.0, 1, 1, 1, 1]]},
+                f,
+            )
+        return {
+            "output_dir": out_dir,
+            "canonical_vti_path": canonical_vti_path,
+            "tf_outputs": [{"tf_name": tf_name, "tf_json": fused_json, "tf_dir": tf_dir}],
+            "tf_configs": [fused_json],
+            "render_world_transform": {"scale_factor": 1.0, "offset": [0.0, 0.0, 0.0]},
+        }
+
+
 class DummyOpacitySampler(Sampler):
     seen_tf_json = []
 
@@ -83,6 +133,8 @@ class TestPipelineMultiTF(unittest.TestCase):
             ("dummy_reader_multi_tf", DummyReader, registry.register_reader),
             ("mark_canonical_multi_tf", MarkCanonicalStage, registry.register_stage),
             ("dummy_renderer_multi_tf", DummyRenderer, registry.register_renderer),
+            ("dummy_scene_json_renderer", DummySceneJsonRenderer, registry.register_renderer),
+            ("dummy_single_scene_json_renderer", DummySingleSceneJsonRenderer, registry.register_renderer),
             ("dummy_opacity_multi_tf", DummyOpacitySampler, registry.register_sampler),
             ("dummy_writer_multi_tf", DummyWriter, registry.register_writer),
         ]:
@@ -135,6 +187,86 @@ class TestPipelineMultiTF(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(render_dir, "TF02", "points.ply")))
         self.assertIn(os.path.join(render_dir, "TF01", "points.ply"), DummyWriter.written_paths)
         self.assertIn(os.path.join(render_dir, "TF02", "points.ply"), DummyWriter.written_paths)
+
+    def test_render_can_discover_scene_jsons_from_tf_root(self):
+        canonical_vti_path = os.path.join(self.tmpdir, "canonical", "case.vti")
+        render_dir = os.path.join(self.tmpdir, "render")
+        export_path = os.path.join(self.tmpdir, "points.ply")
+        high_quality_root = os.path.join(self.tmpdir, "raw", "high_quality", "s1234")
+        os.makedirs(high_quality_root, exist_ok=True)
+        for name in ["s1234_1.json", "s1234_2.json"]:
+            with open(os.path.join(high_quality_root, name), "w", encoding="utf-8") as f:
+                json.dump([{"Name": name}], f)
+
+        cfg = Config.from_dict(
+            {
+                "io": {"reader": "dummy_reader_multi_tf", "path": os.path.join(self.tmpdir, "raw", "s1234", "ct.nii.gz")},
+                "preprocess": [
+                    {
+                        "name": "mark_canonical_multi_tf",
+                        "canonical_vti_path": canonical_vti_path,
+                    }
+                ],
+                "render": {
+                    "renderer": "dummy_scene_json_renderer",
+                    "path": render_dir,
+                    "tf_json_root": os.path.join(self.tmpdir, "raw", "high_quality"),
+                },
+                "sampling": {
+                    "name": "dummy_opacity_multi_tf",
+                    "sample_all_tf": True,
+                },
+                "export": {
+                    "writer": "dummy_writer_multi_tf",
+                    "path": export_path,
+                },
+            }
+        )
+
+        run_pipeline(None, None, cfg)
+
+        self.assertEqual(len(DummyOpacitySampler.seen_tf_json), 2)
+        self.assertTrue(os.path.exists(os.path.join(render_dir, "s1234_1", "points.ply")))
+        self.assertTrue(os.path.exists(os.path.join(render_dir, "s1234_2", "points.ply")))
+
+    def test_single_scene_json_subdir_is_available_to_sampling(self):
+        canonical_vti_path = os.path.join(self.tmpdir, "canonical", "case.vti")
+        render_dir = os.path.join(self.tmpdir, "render")
+        export_path = os.path.join(self.tmpdir, "points.ply")
+        high_quality_root = os.path.join(self.tmpdir, "raw", "high_quality", "s1234")
+        os.makedirs(high_quality_root, exist_ok=True)
+        with open(os.path.join(high_quality_root, "s1234_1.json"), "w", encoding="utf-8") as f:
+            json.dump([{"Name": "s1234_1"}], f)
+
+        cfg = Config.from_dict(
+            {
+                "io": {"reader": "dummy_reader_multi_tf", "path": os.path.join(self.tmpdir, "raw", "s1234", "ct.nii.gz")},
+                "preprocess": [
+                    {
+                        "name": "mark_canonical_multi_tf",
+                        "canonical_vti_path": canonical_vti_path,
+                    }
+                ],
+                "render": {
+                    "renderer": "dummy_single_scene_json_renderer",
+                    "path": render_dir,
+                    "tf_json_root": os.path.join(self.tmpdir, "raw", "high_quality"),
+                },
+                "sampling": {
+                    "name": "dummy_opacity_multi_tf",
+                    "sample_all_tf": True,
+                },
+                "export": {
+                    "writer": "dummy_writer_multi_tf",
+                    "path": export_path,
+                },
+            }
+        )
+
+        run_pipeline(None, None, cfg)
+
+        self.assertEqual(len(DummyOpacitySampler.seen_tf_json), 1)
+        self.assertTrue(os.path.exists(os.path.join(render_dir, "s1234_1", "points.ply")))
 
 
 if __name__ == "__main__":

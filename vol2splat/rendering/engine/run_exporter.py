@@ -42,6 +42,9 @@ def build_parser():
     ap.add_argument('--anysplat_only', '--anysplat-only', dest='anysplat_only', action='store_true')
     ap.add_argument('--camera_convention', '--camera-convention', dest='camera_convention',
                     choices=['opengl', 'opencv'], default='opengl')
+    ap.add_argument('--tf_json', '--tf-json', dest='tf_json', default=None)
+    ap.add_argument('--tf_name', '--tf-name', dest='tf_name', default=None)
+    ap.add_argument('--tf_jsons', '--tf-jsons', dest='tf_jsons', default=None)
     return ap
 
 def main():
