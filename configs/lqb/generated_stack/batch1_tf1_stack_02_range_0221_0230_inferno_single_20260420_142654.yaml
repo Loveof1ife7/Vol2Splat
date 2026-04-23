@@ -2,9 +2,10 @@ batch:
   size: 20
   shuffle: false
   seed: 7
-  case_range: s0000~s025
-  case_start: s0000
-  case_end: s025
+  case_range: s0221~s0230
+  case_start: s0221
+  case_end: s0230
+  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/range_0221_0230_inferno_single
 io:
   reader: nii
   path: raw/{case_id}/ct.nii.gz
@@ -24,12 +25,12 @@ render:
   w: 512
   h: 512
   band_count: 10
-  opaque_unit: 7.0
+  opaque_unit: 3.0
   scene_bbox_size: 2.6
-  opacity_scale: 0.3
+  opacity_scale: 0.1
   tf_mode: linear_gs
   cmaps:
-  - Yellow - Gray - Blue
+  - Inferno (matplotlib)
   hist_eq: false
   camera_convention: opencv
   qc:

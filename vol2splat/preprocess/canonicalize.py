@@ -166,7 +166,9 @@ class CanonicalizeStage(Stage):
         return "zero" if normalize_scalar else "min"
 
     def _resample_torch(self, data, target_shape_zyx, mode, align_corners):
-        tensor = torch.as_tensor(data, dtype=torch.float32)
+        # Torch cannot construct tensors from some volume dtypes such as
+        # numpy.uint16 directly, so normalize the host array to float32 first.
+        tensor = torch.as_tensor(np.asarray(data).astype(np.float32, copy=False))
         interpolation_mode = "nearest" if mode == "nearest" else "trilinear"
         if tensor.ndim == 3:
             tensor = tensor.unsqueeze(0).unsqueeze(0)

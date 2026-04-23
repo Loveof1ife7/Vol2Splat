@@ -162,16 +162,47 @@ def _infer_scene_id_from_volume(vol: Volume) -> str | None:
     extra = getattr(metadata, 'extra', {}) if metadata is not None else {}
     for key in ('scene_id', 'case_id'):
         value = extra.get(key)
-        if isinstance(value, str) and re.fullmatch(r's\d+', value, flags=re.IGNORECASE):
+        if isinstance(value, str) and value.strip():
+            value = value.strip()
+            if re.fullmatch(r's\d+', value, flags=re.IGNORECASE):
+                return value
             return value
 
     source_path = getattr(metadata, 'source_path', None)
     if not source_path:
         return None
-    for part in Path(source_path).resolve().parts[::-1]:
+    resolved_source_path = Path(source_path).resolve()
+    for part in resolved_source_path.parts[::-1]:
         if re.fullmatch(r's\d+', part, flags=re.IGNORECASE):
             return part
+
+    source_name = resolved_source_path.name.lower()
+    if source_name.endswith(('.vti', '.nii', '.nii.gz', '.raw')):
+        parent_name = resolved_source_path.parent.name.strip()
+        if parent_name:
+            return parent_name
+
+    if source_name.endswith('.nii.gz'):
+        stem = resolved_source_path.name[:-7]
+    else:
+        stem = resolved_source_path.stem
+    stem = stem.strip()
+    if stem:
+        return stem
     return None
+
+
+def _resolve_direct_canonical_vti_path(vol: Volume) -> str | None:
+    metadata = getattr(vol, 'metadata', None)
+    source_path = getattr(metadata, 'source_path', None)
+    if not source_path:
+        return None
+    resolved_source_path = os.path.abspath(str(source_path))
+    if not resolved_source_path.lower().endswith('.vti'):
+        return None
+    if not os.path.exists(resolved_source_path):
+        return None
+    return resolved_source_path
 
 
 def _discover_scene_tf_jsons(tf_json_root: str, scene_id: str, tf_json_glob: str = '*.json') -> list[str]:
@@ -240,6 +271,12 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
         vol = get_stage(stage_name)().run(vol, stage_params)
 
     canonical_vti_path = vol.cache.get('canonical_vti_path')
+    if not canonical_vti_path:
+        direct_canonical_vti_path = _resolve_direct_canonical_vti_path(vol)
+        if direct_canonical_vti_path is not None:
+            canonical_vti_path = direct_canonical_vti_path
+            vol.cache['canonical_vti_path'] = direct_canonical_vti_path
+            vol.metadata.extra.setdefault('canonical_vti_path', direct_canonical_vti_path)
     render_result = None
     if getattr(config, 'render', None):
         if not canonical_vti_path:
@@ -254,79 +291,83 @@ def _run_single_volume_pipeline(vol: Volume, output_path: str | None, config: An
         _run_render_qc_if_enabled(render_result, render_qc_cfg)
 
     render_result = vol.cache.get('render_result')
-    sampler_name = config.sampling.name
-    sampler_params = dict(config.sampling.params)
-    if render_result is not None:
-        sampler_params.setdefault('render_result', render_result)
-        if isinstance(render_result, dict) and render_result.get('output_dir'):
-            sampler_params.setdefault('render_output_dir', render_result['output_dir'])
-        if isinstance(render_result, dict) and render_result.get('render_world_transform'):
-            sampler_params.setdefault('render_world_transform', render_result['render_world_transform'])
-    sampler = get_sampler(sampler_name)()
-    sampling_tasks = _resolve_tf_sampling_tasks(sampler_name, sampler_params)
-    sampling_tasks = _filter_sampling_tasks_by_qc(sampling_tasks, render_result)
-    multi_tf_mode = len(sampling_tasks) > 1
-
-    writer = None
-    writer_name = None
-    writer_params = None
-    export_base_path = output_path if output_path else (config.export.path if config.export else None)
-    export_base_path = _scope_path_for_tile(export_base_path, tile_name)
-    if config.export:
-        writer_name = config.export.writer
-        writer_params = dict(config.export.params)
-        if render_result is not None:
-            writer_params.setdefault('render_result', render_result)
-            if isinstance(render_result, dict) and render_result.get('render_world_transform'):
-                writer_params.setdefault('render_world_transform', render_result['render_world_transform'])
-        writer = get_writer(writer_name)()
-
-    empty_sampling_error_tokens = (
-        'No voxels remain after TF alpha filtering',
-        'No nonzero-probability voxels available for sampling',
-    )
     last_pc = None
     written_paths = []
     sampled_tasks = []
     skipped_sampling_tasks = []
-    if not sampling_tasks:
-        print('No sampling tasks remain after QC filtering, skipping sampling/export.')
-    for task in sampling_tasks:
-        label = task.get('tf_name')
-        tf_json = task.get('tf_json')
-        print(f"Sampling using {sampler_name}{' (' + label + ')' if label else ''}...")
-        if tf_json:
-            print(f"Using transfer function: {tf_json}")
-        try:
-            if canonical_vti_path:
-                task.setdefault('canonical_vti_path', canonical_vti_path)
-                try:
-                    pc = sampler.sample_canonical_vti(canonical_vti_path, task)
-                except NotImplementedError:
-                    pc = sampler.sample(vol, task)
-            else:
-                pc = sampler.sample(vol, task)
-        except (AssertionError, ValueError) as e:
-            msg = str(e)
-            if any(token in msg for token in empty_sampling_error_tokens):
-                print(f"Skipping sampling/export for {label or 'default'}: {msg}")
-                skipped_sampling_tasks.append({
-                    'task': dict(task),
-                    'reason': msg,
-                })
-                continue
-            raise
+    sampling_tasks = []
+    if config.sampling:
+        sampler_name = config.sampling.name
+        sampler_params = dict(config.sampling.params)
+        if render_result is not None:
+            sampler_params.setdefault('render_result', render_result)
+            if isinstance(render_result, dict) and render_result.get('output_dir'):
+                sampler_params.setdefault('render_output_dir', render_result['output_dir'])
+            if isinstance(render_result, dict) and render_result.get('render_world_transform'):
+                sampler_params.setdefault('render_world_transform', render_result['render_world_transform'])
+        sampler = get_sampler(sampler_name)()
+        sampling_tasks = _resolve_tf_sampling_tasks(sampler_name, sampler_params)
+        sampling_tasks = _filter_sampling_tasks_by_qc(sampling_tasks, render_result)
+        multi_tf_mode = len(sampling_tasks) > 1
 
-        sampled_tasks.append(dict(task))
-        last_pc = pc
-        if writer is not None:
-            path_to_write = _resolve_export_path_for_task(export_base_path, writer_name, task, render_result, multi_tf_mode)
-            if path_to_write:
-                print(f'Writing to {path_to_write} using {writer_name}...')
-                writer.write(pc, path_to_write, **writer_params)
-                written_paths.append(path_to_write)
-            else:
-                print('No output path specified, skipping write.')
+        writer = None
+        writer_name = None
+        writer_params = None
+        export_base_path = output_path if output_path else (config.export.path if config.export else None)
+        export_base_path = _scope_path_for_tile(export_base_path, tile_name)
+        if config.export:
+            writer_name = config.export.writer
+            writer_params = dict(config.export.params)
+            if render_result is not None:
+                writer_params.setdefault('render_result', render_result)
+                if isinstance(render_result, dict) and render_result.get('render_world_transform'):
+                    writer_params.setdefault('render_world_transform', render_result['render_world_transform'])
+            writer = get_writer(writer_name)()
+
+        empty_sampling_error_tokens = (
+            'No voxels remain after TF alpha filtering',
+            'No nonzero-probability voxels available for sampling',
+        )
+        if not sampling_tasks:
+            print('No sampling tasks remain after QC filtering, skipping sampling/export.')
+        for task in sampling_tasks:
+            label = task.get('tf_name')
+            tf_json = task.get('tf_json')
+            print(f"Sampling using {sampler_name}{' (' + label + ')' if label else ''}...")
+            if tf_json:
+                print(f"Using transfer function: {tf_json}")
+            try:
+                if canonical_vti_path:
+                    task.setdefault('canonical_vti_path', canonical_vti_path)
+                    try:
+                        pc = sampler.sample_canonical_vti(canonical_vti_path, task)
+                    except NotImplementedError:
+                        pc = sampler.sample(vol, task)
+                else:
+                    pc = sampler.sample(vol, task)
+            except (AssertionError, ValueError) as e:
+                msg = str(e)
+                if any(token in msg for token in empty_sampling_error_tokens):
+                    print(f"Skipping sampling/export for {label or 'default'}: {msg}")
+                    skipped_sampling_tasks.append({
+                        'task': dict(task),
+                        'reason': msg,
+                    })
+                    continue
+                raise
+
+            sampled_tasks.append(dict(task))
+            last_pc = pc
+            if writer is not None:
+                path_to_write = _resolve_export_path_for_task(export_base_path, writer_name, task, render_result, multi_tf_mode)
+                if path_to_write:
+                    print(f'Writing to {path_to_write} using {writer_name}...')
+                    writer.write(pc, path_to_write, **writer_params)
+                    written_paths.append(path_to_write)
+                else:
+                    print('No output path specified, skipping write.')
+    elif config.export:
+        raise ValueError("Export stage requires sampling to be configured")
     return {
         'volume': vol,
         'canonical_vti_path': canonical_vti_path,

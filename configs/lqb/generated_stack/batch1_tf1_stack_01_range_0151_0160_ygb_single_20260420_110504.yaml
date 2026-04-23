@@ -2,10 +2,10 @@ batch:
   size: 20
   shuffle: false
   seed: 7
-  case_range: s0126~s0150
-  case_start: s0126
-  case_end: s0150
-  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/range_0126_0150_turbo_single
+  case_range: s0151~s0160
+  case_start: s0151
+  case_end: s0160
+  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/range_0151_0160_ygb_single
 io:
   reader: nii
   path: raw/{case_id}/ct.nii.gz
@@ -25,12 +25,12 @@ render:
   w: 512
   h: 512
   band_count: 10
-  opaque_unit: 7.0
+  opaque_unit: 2.0
   scene_bbox_size: 2.6
-  opacity_scale: 0.3
+  opacity_scale: 0.2
   tf_mode: linear_gs
   cmaps:
-  - Turbo
+  - Yellow - Gray - Blue
   hist_eq: false
   camera_convention: opencv
   qc:

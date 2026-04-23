@@ -2,10 +2,10 @@ batch:
   size: 20
   shuffle: false
   seed: 7
-  case_range: s0101~s0125
-  case_start: s0101
-  case_end: s0125
-  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/linear_gs/cool_to_warm_extended/s0101_s0125
+  case_range: s0171~s0180
+  case_start: s0171
+  case_end: s0180
+  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/range_0171_0180_grayscale_single
 io:
   reader: nii
   path: raw/{case_id}/ct.nii.gz
@@ -25,12 +25,12 @@ render:
   w: 512
   h: 512
   band_count: 10
-  opaque_unit: 7.0
+  opaque_unit: 2.0
   scene_bbox_size: 2.6
-  opacity_scale: 0.3
+  opacity_scale: 0.2
   tf_mode: linear_gs
   cmaps:
-  - Cool to Warm (Extended)
+  - Grayscale
   hist_eq: false
   camera_convention: opencv
   qc:

@@ -40,7 +40,7 @@ class ExportConfig:
 class Config:
     io: IOConfig
     preprocess: List[StageConfig] = field(default_factory=list)
-    sampling: SamplingConfig = field(default_factory=lambda: SamplingConfig(name='uniform'))
+    sampling: Optional[SamplingConfig] = None
     render: Optional[RenderConfig] = None
     export: Optional[ExportConfig] = None
 
@@ -63,13 +63,16 @@ class Config:
                     raise ConfigError("Preprocess stage missing 'name'")
                 preprocess_cfgs.append(StageConfig(name=item['name'], params={k: v for k, v in item.items() if k != 'name'}))
 
-            sampling_data = data.get('sampling', {})
-            if not sampling_data:
-                raise ConfigError("Missing 'sampling' section")
-            samp_name = sampling_data.get('name')
-            if not samp_name:
-                raise ConfigError("Missing 'sampling.name'")
-            sampling_cfg = SamplingConfig(name=samp_name, params={k: v for k, v in sampling_data.items() if k != 'name'})
+            sampling_cfg = None
+            sampling_data = data.get('sampling')
+            if sampling_data:
+                samp_name = sampling_data.get('name')
+                if not samp_name:
+                    raise ConfigError("Missing 'sampling.name'")
+                sampling_cfg = SamplingConfig(
+                    name=samp_name,
+                    params={k: v for k, v in sampling_data.items() if k != 'name'},
+                )
 
             render_cfg = None
             render_data = data.get('render')

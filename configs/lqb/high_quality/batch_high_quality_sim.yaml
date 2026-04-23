@@ -1,44 +1,42 @@
 batch:
-  size: 20
+  raw_root: raw/high_quality/sim
+  output_root: outputs/high_quality_sim
+  case_glob: "*"
+  filename: canonical.vti
+  size: 10
   shuffle: false
   seed: 7
-  case_range: s0076~s0100
-  case_start: s0076
-  case_end: s0100
-  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/generated_stack/range_0076_0100_bcw_single
+  case_ids:
+    - csafe_heptane_302x302x302_uint8
+    - hcci_oh_560x560x560_float32
+    - hydrogen_atom_128x128x128_uint8
+    - miranda_1024x1024x1024_float32_part_0000
+    - tacc_turbulence_256x256x256_float32_part_0000
+
 io:
-  reader: nii
-  path: raw/{case_id}/ct.nii.gz
-preprocess:
-- name: canonicalize
-  backend: torch
-  target_spacing: 1.0
-  pad_to_cube: true
-  write_vti: true
-  vti_path: outputs/{batch_id}/{case_id}/{input_stem}_canonical.vti
+  reader: vti
+  path: raw/high_quality/sim/{case_id}/canonical.vti
+
 render:
-  path: outputs/{batch_id}/{case_id}
+  path: outputs/high_quality_sim/{case_id}
   renderer: pv_engine
   executable: pvpython
   num: 84
   test_num: 20
   w: 512
   h: 512
-  band_count: 10
-  opaque_unit: 7.0
+  opaque_unit: 2.0
   scene_bbox_size: 2.6
-  opacity_scale: 0.3
-  tf_mode: linear_gs
-  cmaps:
-  - Black, Blue and White
-  hist_eq: false
   camera_convention: opencv
+  tf_json_root: raw/high_quality/sim
+
   qc:
     enabled: true
     skip_failed_tf: true
     min_nonzero_ratio: 0.01
     min_mean_intensity: 0.01
     min_intensity_std: 0.005
+
 sampling:
   name: opacity
   n_points: 100000
@@ -54,6 +52,7 @@ sampling:
   aniso_tangent_scale_mul: 1.2
   aniso_normal_scale_mul: 0.1
   aniso_min_linear_scale: 1.0e-06
+
 export:
   writer: gs_ply
   params:
