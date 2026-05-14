@@ -91,7 +91,7 @@ def make_gaussian_tf(center: float, width: float, color=(0.2, 0.8, 1.0), opacity
         return torch.cat([rgb, opacity.unsqueeze(-1)], dim=-1)
     return tf
 
-def apply_tf_volume(vol: 'torch.Tensor', tf_callable, premultiply_alpha: bool = True, chunk_size: int = int(1e8), block_size: int = 16):
+def apply_tf_volume(vol: 'torch.Tensor', tf_callable, premultiply_alpha: bool = False, chunk_size: int = int(1e8), block_size: int = 16):
     _ensure_torch_available()
     d_dim, h_dim, w_dim = vol.shape
     total_elements = d_dim * h_dim * w_dim

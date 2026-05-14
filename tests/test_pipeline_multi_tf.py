@@ -268,6 +268,46 @@ class TestPipelineMultiTF(unittest.TestCase):
         self.assertEqual(len(DummyOpacitySampler.seen_tf_json), 1)
         self.assertTrue(os.path.exists(os.path.join(render_dir, "s1234_1", "points.ply")))
 
+    def test_vti_input_can_render_with_scene_jsons_for_named_sim_cases(self):
+        case_id = "hcci_oh_560x560x560_float32"
+        case_dir = os.path.join(self.tmpdir, "raw", "high_quality", "sim", case_id)
+        os.makedirs(case_dir, exist_ok=True)
+        canonical_vti_path = os.path.join(case_dir, "canonical.vti")
+        with open(canonical_vti_path, "w", encoding="utf-8") as f:
+            f.write("<VTKFile></VTKFile>")
+        for name in [f"{case_id}_1.json", f"{case_id}_2.json"]:
+            with open(os.path.join(case_dir, name), "w", encoding="utf-8") as f:
+                json.dump([{"Name": name}], f)
+
+        render_dir = os.path.join(self.tmpdir, "render")
+        export_path = os.path.join(self.tmpdir, "points.ply")
+
+        cfg = Config.from_dict(
+            {
+                "io": {"reader": "dummy_reader_multi_tf", "path": canonical_vti_path},
+                "render": {
+                    "renderer": "dummy_scene_json_renderer",
+                    "path": render_dir,
+                    "tf_json_root": os.path.join(self.tmpdir, "raw", "high_quality", "sim"),
+                },
+                "sampling": {
+                    "name": "dummy_opacity_multi_tf",
+                    "sample_all_tf": True,
+                },
+                "export": {
+                    "writer": "dummy_writer_multi_tf",
+                    "path": export_path,
+                },
+            }
+        )
+
+        run_pipeline(None, None, cfg)
+
+        self.assertEqual(len(DummyOpacitySampler.seen_tf_json), 2)
+        self.assertEqual(DummyOpacitySampler.seen_tf_json, sorted(DummyOpacitySampler.seen_tf_json))
+        self.assertTrue(os.path.exists(os.path.join(render_dir, f"{case_id}_1", "points.ply")))
+        self.assertTrue(os.path.exists(os.path.join(render_dir, f"{case_id}_2", "points.ply")))
+
 
 if __name__ == "__main__":
     unittest.main()

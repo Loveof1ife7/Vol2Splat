@@ -630,6 +630,12 @@ def run_batch(
         exclude_case_ids=exclude_case_ids,
     )
 
+    batch_cfg = base_config_data.get("batch") or {}
+    if bool(batch_cfg.get("require_case_ids")) and not settings.case_ids:
+        raise ValueError(
+            "batch.require_case_ids is true but no case_ids were resolved; set batch.case_ids in YAML or pass --case-ids on the CLI."
+        )
+
     assigned_cases, total_batches = _discover_and_assign_cases(settings)
     selected_cases = _select_requested_batch(assigned_cases, settings.batch_index)
     report = _initialize_batch_report(settings, total_batches, selected_cases)

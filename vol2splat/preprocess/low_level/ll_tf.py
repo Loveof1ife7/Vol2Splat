@@ -5,7 +5,7 @@ import torch
 def apply_tf_volume(
     vol : torch.tensor, # [D, H ,W]
     tf_callable,
-    premultiply_alpha=True,
+    premultiply_alpha=False,
     chunk_size=int(1e8),
     block_size=int(16),
 ):
@@ -39,14 +39,14 @@ def apply_tf_volume(
     if mode == 'chunk':
         vol_flat = vol.reshape(-1)
         chunks = torch.split(vol_flat, chunk_size)
-        rgb_chunks = []
+        rgba_chunks = []
         for s in chunks:
             rgba = tf_callable(s)
             if premultiply_alpha:
                 rgba[:, :3] *= rgba[:, 3:4]
-                rgb_chunks.append(rgba)
-        rgb_full = torch.cat(rgb_chunks, dim=0).reshape(vol.shape[0], vol.shape[1], vol.shape[2], 4)
-        return rgb_full
+            rgba_chunks.append(rgba)
+        rgba_full = torch.cat(rgba_chunks, dim=0).reshape(vol.shape[0], vol.shape[1], vol.shape[2], 4)
+        return rgba_full
 
 @torch.no_grad()
 def make_json_tf(json_path: str):

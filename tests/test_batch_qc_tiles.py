@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from vol2splat.batch import assign_cases_to_batches, discover_case_inputs, filter_case_infos, prepare_case_config_data, run_batch
 from vol2splat.io.tiling import maybe_tile_input_volume
-from vol2splat.rendering.qc import run_render_qc
+from vol2splat.rendering.qc import run_render_qc, _apply_metric_rescue_rules
 from vol2splat.core.types import Volume
 
 try:
@@ -36,6 +36,100 @@ except Exception:
 
 
 class TestBatchQCTiles(unittest.TestCase):
+    def test_foggy_rescue_rule_is_conservative(self):
+        rescued_reasons, rescue_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.44,
+                "masked_fft_high_freq_ratio": 0.012,
+                "detail_over_opacity": 0.058,
+            },
+            ["foggy_low_detail"],
+            {
+                "rescue_foggy_foreground_alpha_max": 0.5,
+                "rescue_foggy_min_masked_fft_high_freq_ratio": 0.011,
+                "rescue_foggy_min_detail_over_opacity": 0.055,
+            },
+        )
+        self.assertEqual(rescued_reasons, [])
+        self.assertEqual(rescue_codes, ["rescued_foggy_good_structure"])
+
+        kept_reasons, kept_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.82,
+                "masked_fft_high_freq_ratio": 0.028,
+                "detail_over_opacity": 0.073,
+            },
+            ["foggy_low_detail"],
+            {
+                "rescue_foggy_foreground_alpha_max": 0.5,
+                "rescue_foggy_min_masked_fft_high_freq_ratio": 0.011,
+                "rescue_foggy_min_detail_over_opacity": 0.055,
+            },
+        )
+        self.assertEqual(kept_reasons, ["foggy_low_detail"])
+        self.assertEqual(kept_codes, [])
+
+    def test_peak_structure_rescue_rule_is_selective(self):
+        rescued_reasons, rescue_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.54,
+                "nonzero_ratio": 0.22,
+                "mean_intensity": 0.11,
+                "max_masked_fft_high_freq_ratio": 0.0137,
+                "max_detail_over_opacity": 0.068,
+            },
+            ["low_masked_high_frequency", "foggy_low_detail"],
+            {
+                "rescue_peak_structure_foreground_alpha_max": 0.6,
+                "rescue_peak_structure_min_nonzero_ratio": 0.01,
+                "rescue_peak_structure_min_mean_intensity": 0.008,
+                "rescue_peak_structure_min_max_masked_fft_high_freq_ratio": 0.012,
+                "rescue_peak_structure_min_max_detail_over_opacity": 0.06,
+            },
+        )
+        self.assertEqual(rescued_reasons, [])
+        self.assertEqual(rescue_codes, ["rescued_peak_structure_soft_foreground"])
+
+        kept_reasons, kept_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.95,
+                "nonzero_ratio": 0.22,
+                "mean_intensity": 0.11,
+                "max_masked_fft_high_freq_ratio": 0.0137,
+                "max_detail_over_opacity": 0.068,
+            },
+            ["low_masked_high_frequency", "foggy_low_detail"],
+            {
+                "rescue_peak_structure_foreground_alpha_max": 0.6,
+                "rescue_peak_structure_min_nonzero_ratio": 0.01,
+                "rescue_peak_structure_min_mean_intensity": 0.008,
+                "rescue_peak_structure_min_max_masked_fft_high_freq_ratio": 0.012,
+                "rescue_peak_structure_min_max_detail_over_opacity": 0.06,
+            },
+        )
+        self.assertEqual(kept_reasons, ["low_masked_high_frequency", "foggy_low_detail"])
+        self.assertEqual(kept_codes, [])
+
+        sparse_reasons, sparse_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.45,
+                "nonzero_ratio": 0.007,
+                "mean_intensity": 0.004,
+                "max_masked_fft_high_freq_ratio": 0.19,
+                "max_detail_over_opacity": 0.9,
+            },
+            ["too_sparse", "too_dark"],
+            {
+                "rescue_peak_structure_foreground_alpha_max": 0.6,
+                "rescue_peak_structure_min_nonzero_ratio": 0.01,
+                "rescue_peak_structure_min_mean_intensity": 0.008,
+                "rescue_peak_structure_min_max_masked_fft_high_freq_ratio": 0.012,
+                "rescue_peak_structure_min_max_detail_over_opacity": 0.06,
+            },
+        )
+        self.assertEqual(sparse_reasons, ["too_sparse", "too_dark"])
+        self.assertEqual(sparse_codes, [])
+
     def test_discover_case_inputs_and_prepare_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             raw_root = os.path.join(tmpdir, "raw")
@@ -196,6 +290,74 @@ class TestBatchQCTiles(unittest.TestCase):
             self.assertIn("TF02", report["failed_tf_names"])
             self.assertTrue(os.path.exists(report["report_json"]))
             self.assertTrue(os.path.exists(report["report_md"]))
+
+    @unittest.skipIf(Image is None, "Pillow is required for render QC test")
+    def test_render_qc_rejects_foggy_low_frequency_tf(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            detail_dir = os.path.join(tmpdir, "TF01", "train")
+            foggy_dir = os.path.join(tmpdir, "TF02", "train")
+            os.makedirs(detail_dir, exist_ok=True)
+            os.makedirs(foggy_dir, exist_ok=True)
+
+            size = 96
+            yy, xx = np.mgrid[:size, :size]
+            cy = (size - 1) * 0.5
+            cx = (size - 1) * 0.5
+            rr = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)
+            mask = rr <= size * 0.32
+
+            detail = np.zeros((size, size, 4), dtype=np.uint8)
+            checker = (((xx // 4) + (yy // 4)) % 2).astype(np.uint8)
+            detail_rgb = 80 + checker * 140
+            detail[mask, 0] = detail_rgb[mask]
+            detail[mask, 1] = (detail_rgb[mask] * 0.9).astype(np.uint8)
+            detail[mask, 2] = (detail_rgb[mask] * 0.7).astype(np.uint8)
+            detail[mask, 3] = 255
+
+            foggy = np.zeros((size, size, 4), dtype=np.uint8)
+            smooth = np.clip(1.0 - rr / (size * 0.32), 0.0, 1.0)
+            smooth_rgb = (70 + smooth * 150).astype(np.uint8)
+            foggy[mask, 0] = smooth_rgb[mask]
+            foggy[mask, 1] = smooth_rgb[mask]
+            foggy[mask, 2] = smooth_rgb[mask]
+            foggy[mask, 3] = 255
+
+            Image.fromarray(detail).save(os.path.join(detail_dir, "r_0000.png"))
+            Image.fromarray(foggy).save(os.path.join(foggy_dir, "r_0000.png"))
+
+            tf01_json = os.path.join(tmpdir, "TF01", "tf_config.json")
+            tf02_json = os.path.join(tmpdir, "TF02", "tf_config.json")
+            with open(tf01_json, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            with open(tf02_json, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+
+            report = run_render_qc(
+                {
+                    "output_dir": tmpdir,
+                    "tf_outputs": [
+                        {"tf_name": "TF01", "tf_json": tf01_json, "tf_dir": os.path.dirname(tf01_json)},
+                        {"tf_name": "TF02", "tf_json": tf02_json, "tf_dir": os.path.dirname(tf02_json)},
+                    ],
+                },
+                {
+                    "enabled": True,
+                    "skip_failed_tf": True,
+                    "min_nonzero_ratio": 0.05,
+                    "min_mean_intensity": 0.02,
+                    "min_intensity_std": 0.01,
+                    "min_masked_fft_high_freq_ratio": 0.02,
+                    "min_detail_over_opacity": 0.03,
+                },
+            )
+            self.assertIn("TF01", report["passed_tf_names"])
+            self.assertIn("TF02", report["failed_tf_names"])
+            failed_item = next(item for item in report["items"] if item["tf_name"] == "TF02")
+            self.assertIn("foggy_low_detail", failed_item["reason_codes"])
+            self.assertLess(
+                failed_item["metrics"]["detail_over_opacity"],
+                next(item for item in report["items"] if item["tf_name"] == "TF01")["metrics"]["detail_over_opacity"],
+            )
 
     @unittest.skipIf(Image is None or torch is None or UNet is None, "Pillow, torch and monai are required for segmentation QC test")
     def test_render_qc_with_monai_segmentation(self):

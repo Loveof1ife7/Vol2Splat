@@ -57,6 +57,7 @@ class CanonicalizeStage(Stage):
             resampled,
             normalize_scalar=normalize_scalar,
             normalize_method=normalize_method,
+            normalize_cfg=cfg,
         )
         resampled = normalization_info["data"]
         resolved_pad_value_mode = self._resolve_pad_value_mode(
@@ -91,6 +92,10 @@ class CanonicalizeStage(Stage):
             "normalize_method": normalization_info["method"],
             "original_value_range": normalization_info["original_range"],
             "normalized_value_range": normalization_info["normalized_range"],
+            "normalize_percentile_low": normalization_info.get("percentile_low"),
+            "normalize_percentile_high": normalization_info.get("percentile_high"),
+            "normalize_fixed_vmin": normalization_info.get("fixed_vmin"),
+            "normalize_fixed_vmax": normalization_info.get("fixed_vmax"),
             "pad_value_mode": resolved_pad_value_mode,
             "pad_value": self._describe_pad_value(resampled, pad_value, resolved_pad_value_mode),
             "spacing_xyz": [1.0, 1.0, 1.0],
@@ -131,7 +136,7 @@ class CanonicalizeStage(Stage):
             return self._resample_scipy(data, tuple(int(v) for v in target_shape_zyx), mode)
         raise ValueError(f"Unsupported canonicalize backend: {backend}")
 
-    def _maybe_normalize_scalar(self, data, normalize_scalar: bool, normalize_method: str):
+    def _maybe_normalize_scalar(self, data, normalize_scalar: bool, normalize_method: str, normalize_cfg: Dict[str, Any]):
         if not normalize_scalar or data.ndim != 3:
             return {
                 "data": data,
@@ -139,26 +144,82 @@ class CanonicalizeStage(Stage):
                 "method": None,
                 "original_range": None,
                 "normalized_range": None,
+                "percentile_low": None,
+                "percentile_high": None,
+                "fixed_vmin": None,
+                "fixed_vmax": None,
             }
 
         data = np.asarray(data, dtype=np.float32)
-        if normalize_method != "minmax":
-            raise ValueError(f"Unsupported normalize_method in canonicalize: {normalize_method}")
+        method = normalize_method.lower()
+        if method == "minmax":
+            vmin = float(np.min(data))
+            vmax = float(np.max(data))
+            if vmax > vmin:
+                data = (data - vmin) / (vmax - vmin)
+            else:
+                data = np.zeros_like(data, dtype=np.float32)
+            return {
+                "data": data.astype(np.float32, copy=False),
+                "applied": True,
+                "method": method,
+                "original_range": [vmin, vmax],
+                "normalized_range": [0.0, 1.0],
+                "percentile_low": None,
+                "percentile_high": None,
+                "fixed_vmin": None,
+                "fixed_vmax": None,
+            }
 
-        vmin = float(np.min(data))
-        vmax = float(np.max(data))
-        if vmax > vmin:
-            data = (data - vmin) / (vmax - vmin)
-        else:
-            data = np.zeros_like(data, dtype=np.float32)
+        if method == "percentile":
+            pl = float(normalize_cfg.get("normalize_percentile_low", 1.0))
+            ph = float(normalize_cfg.get("normalize_percentile_high", 99.0))
+            if ph <= pl:
+                raise ValueError(f"normalize_percentile_high must exceed normalize_percentile_low, got {pl=} {ph=}")
+            vmin, vmax = (float(v) for v in np.percentile(data, (pl, ph)))
+            if vmax > vmin:
+                data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
+            else:
+                data = np.zeros_like(data, dtype=np.float32)
+            return {
+                "data": data.astype(np.float32, copy=False),
+                "applied": True,
+                "method": method,
+                "original_range": [vmin, vmax],
+                "normalized_range": [0.0, 1.0],
+                "percentile_low": pl,
+                "percentile_high": ph,
+                "fixed_vmin": None,
+                "fixed_vmax": None,
+            }
 
-        return {
-            "data": data.astype(np.float32, copy=False),
-            "applied": True,
-            "method": normalize_method,
-            "original_range": [vmin, vmax],
-            "normalized_range": [0.0, 1.0],
-        }
+        if method == "fixed_range":
+            raw_min = normalize_cfg.get("normalize_fixed_vmin")
+            raw_max = normalize_cfg.get("normalize_fixed_vmax")
+            if raw_min is None or raw_max is None:
+                raise ValueError(
+                    "normalize_method 'fixed_range' requires normalize_fixed_vmin and normalize_fixed_vmax in preprocess config"
+                )
+            vmin, vmax = float(raw_min), float(raw_max)
+            if vmax <= vmin:
+                raise ValueError(f"normalize_fixed_vmax must exceed normalize_fixed_vmin, got {vmin=} {vmax=}")
+            data = np.clip((data - vmin) / (vmax - vmin), 0.0, 1.0)
+            return {
+                "data": data.astype(np.float32, copy=False),
+                "applied": True,
+                "method": method,
+                "original_range": [vmin, vmax],
+                "normalized_range": [0.0, 1.0],
+                "percentile_low": None,
+                "percentile_high": None,
+                "fixed_vmin": vmin,
+                "fixed_vmax": vmax,
+            }
+
+        raise ValueError(
+            f"Unsupported normalize_method in canonicalize: {normalize_method}. "
+            f"Use 'minmax', 'percentile', or 'fixed_range'."
+        )
 
     def _resolve_pad_value_mode(self, pad_value_mode, normalize_scalar: bool) -> str:
         if pad_value_mode is not None:

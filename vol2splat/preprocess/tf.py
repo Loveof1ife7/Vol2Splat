@@ -11,7 +11,7 @@ class TransferFunctionStage(Stage):
         tf_json = cfg.get("tf_json")
         backend = cfg.get("backend", cfg.get("tf_backend", "auto"))
         device = cfg.get("device", cfg.get("tf_device"))
-        premultiply_alpha = bool(cfg.get("premultiply_alpha", True))
+        premultiply_alpha = bool(cfg.get("premultiply_alpha", False))
 
         if vol.data.ndim != 3:
             raise ValueError(f"TF stage expects scalar volume (Z,Y,X), got {vol.data.shape}")
