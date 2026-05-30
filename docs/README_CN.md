@@ -219,9 +219,8 @@ python scipts/volume_splitter.py \
 批量处理一整个 `raw/` 目录：
 
 ```bash
-vol2splat batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
-python -m vol2splat.cli batch -c configs/batch_canonical_3dgs.yaml --raw-root raw --output-root outputs
-```
+vol2splat batch -c configs/lqb/batch_canonical_3dgs.yaml 
+python -m vol2splat.cli batch -c configs/lqb/batch_canonical_3dgs.yaml 
 
 统一入口也支持 `dataset` 模式（旧 datasets 批处理能力已合并）：
 
@@ -277,6 +276,8 @@ python -m vol2splat.cli batch \
 - renderer 只吃 canonical VTI，不直接处理原始源格式差异
 - render QC 是 render 之后、sampling 之前的自动质检层
 - render QC 可以只用图像启发式规则，也可以叠加 2D 医学分割模型
+- 对 “coverage 很大但图像雾化、频带很低” 的 TF，可在 QC 里加
+  `min_masked_fft_high_freq_ratio` 和 `min_detail_over_opacity`
 - sampler 先消费 rendering 产出的 `tf_config.json`，再基于 RGBA volume 采样
 - sampler 的输出点云应直接位于 target bbox world
 - export 要和 rendering 使用同一套 render world，但原则上不负责二次坐标纠偏

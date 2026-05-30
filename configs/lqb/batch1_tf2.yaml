@@ -1,4 +1,5 @@
 batch:
+  raw_root: raw/totalseg3d
   size: 20
   shuffle: false
   seed: 7
@@ -11,7 +12,7 @@ batch:
 
 io:
   reader: nii
-  path: raw/{case_id}/ct.nii.gz
+  path: raw/totalseg3d/{case_id}/ct.nii.gz
 
 preprocess:
 - name: canonicalize

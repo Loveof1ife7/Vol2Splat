@@ -43,7 +43,10 @@ class TestConfigStack(unittest.TestCase):
 
     def test_resolvers_accept_aliases(self):
         self.assertEqual(resolve_tf_mode("double"), "linear_gs_sum2")
+        self.assertEqual(resolve_tf_mode("gaussian"), "gaussian")
         self.assertEqual(resolve_cmap_name("Inferno"), "Inferno (matplotlib)")
+        self.assertEqual(resolve_cmap_name("Yellow - Grey - Blue"), "Yellow - Gray - Blue")
+        self.assertEqual(resolve_cmap_name("Bluw - Green - Orange"), "Blue - Green - Orange")
 
     def test_pv_engine_serializes_cmap_lists_as_json(self):
         renderer = PVEngineRenderer()
@@ -112,6 +115,120 @@ class TestConfigStack(unittest.TestCase):
             self.assertTrue(generated["batch"]["output_root"].endswith("outputs/generated_stack/second_range"))
             self.assertEqual(generated["render"]["tf_mode"], "linear_gs_sum2")
             self.assertEqual(generated["render"]["cmaps"], ["Inferno (matplotlib)"])
+
+    def test_generate_config_stack_expands_cmaps_and_preserves_template_case_ids(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = os.path.join(tmpdir, "batch_sim_render_only.yaml")
+            stack_path = os.path.join(tmpdir, "batch_sim_render_only_stack.yaml")
+            with open(template_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    {
+                        "batch": {
+                            "case_ids": [
+                                "miranda_1024x1024x1024_float32_part_0000",
+                                "miranda_1024x1024x1024_float32_part_0001",
+                            ]
+                        },
+                        "render": {"tf_mode": "linear_gs_sum2", "cmaps": ["Cool to Warm (Extended)"]},
+                        "io": {"reader": "vti", "path": "raw_sim/{case_id}/{case_id}_canonical.vti"},
+                    },
+                    f,
+                    sort_keys=False,
+                )
+            with open(stack_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    {
+                        "template": "batch_sim_render_only.yaml",
+                        "output_dir": "generated_stack",
+                        "dataset_output_root": "outputs/generated_stack",
+                        "items": [
+                            {
+                                "name": "miranda_render_only",
+                                "tf_mode": "linear_gs_sum2",
+                                "cmaps": [
+                                    "Cool to Warm (Extended)",
+                                    "Turbo",
+                                ],
+                            }
+                        ],
+                    },
+                    f,
+                    sort_keys=False,
+                )
+
+            summary = generate_config_stack(stack_path=stack_path, date_tag="20260530_120000")
+
+            self.assertEqual(len(summary["items"]), 2)
+            self.assertTrue(summary["items"][0]["name"].startswith("miranda_render_only_"))
+            with open(summary["items"][0]["config_path"], "r", encoding="utf-8") as f:
+                generated_a = yaml.safe_load(f)
+            with open(summary["items"][1]["config_path"], "r", encoding="utf-8") as f:
+                generated_b = yaml.safe_load(f)
+            self.assertEqual(
+                generated_a["batch"]["case_ids"],
+                [
+                    "miranda_1024x1024x1024_float32_part_0000",
+                    "miranda_1024x1024x1024_float32_part_0001",
+                ],
+            )
+            self.assertNotIn("case_range", generated_a["batch"])
+            self.assertEqual(generated_a["render"]["cmaps"], ["Cool to Warm (Extended)"])
+            self.assertEqual(generated_b["render"]["cmaps"], ["Turbo"])
+
+    def test_generate_config_stack_expands_tf_modes_and_render_sweep(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = os.path.join(tmpdir, "batch_sim_render_only.yaml")
+            stack_path = os.path.join(tmpdir, "batch_sim_render_only_stack.yaml")
+            with open(template_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    {
+                        "batch": {"case_ids": ["miranda_0000"]},
+                        "render": {
+                            "tf_mode": "linear_gs",
+                            "cmaps": ["Cool to Warm (Extended)"],
+                            "opaque_unit": 2.0,
+                            "opacity_scale": 0.2,
+                        },
+                        "io": {"reader": "vti", "path": "raw_sim/{case_id}/{case_id}_canonical.vti"},
+                    },
+                    f,
+                    sort_keys=False,
+                )
+            with open(stack_path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(
+                    {
+                        "template": "batch_sim_render_only.yaml",
+                        "output_dir": "generated_stack",
+                        "dataset_output_root": "outputs/generated_stack",
+                        "items": [
+                            {
+                                "name": "miranda_render_sweep",
+                                "tf_modes": ["linear_gs_sum2", "gaussian"],
+                                "cmaps": ["Turbo", "Jet"],
+                                "render_sweep": {
+                                    "opaque_unit": [3.0, 7.0],
+                                    "opacity_scale": [0.1, 0.3],
+                                },
+                            }
+                        ],
+                    },
+                    f,
+                    sort_keys=False,
+                )
+
+            summary = generate_config_stack(stack_path=stack_path, date_tag="20260530_130000")
+
+            self.assertEqual(len(summary["items"]), 16)
+            names = [item["name"] for item in summary["items"]]
+            self.assertTrue(any("gaussian" in name for name in names))
+            self.assertTrue(any("opaque_unit_7_0" in name for name in names))
+            self.assertTrue(any("opacity_scale_0_3" in name for name in names))
+            with open(summary["items"][-1]["config_path"], "r", encoding="utf-8") as f:
+                generated = yaml.safe_load(f)
+            self.assertIn(generated["render"]["tf_mode"], ["linear_gs_sum2", "gaussian"])
+            self.assertIn(generated["render"]["cmaps"], [["Turbo"], ["Jet"]])
+            self.assertIn(generated["render"]["opaque_unit"], [3.0, 7.0])
+            self.assertIn(generated["render"]["opacity_scale"], [0.1, 0.3])
 
     def test_run_generated_stack_delegates_each_config_to_batch_runner(self):
         summary = {

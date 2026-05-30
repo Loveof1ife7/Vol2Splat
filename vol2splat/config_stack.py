@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+from itertools import product
 from pathlib import Path
 import re
 from typing import Any, Dict
@@ -14,18 +15,41 @@ from .config import load_config_data
 TF_MODE_PRESETS = {
     "single": "linear_gs",
     "double": "linear_gs_sum2",
+    "unit": "unit",
+    "linear": "linear",
+    "linear_sum2": "linear_sum2",
+    "linear_pair": "linear_pair",
+    "linear_soft": "linear_soft",
+    "linear_soft_sum2": "linear_soft_sum2",
+    "linear_vol2splat": "linear_vol2splat",
+    "linear_v2splat": "linear_v2splat",
+    "linear_vol2splat_sum2": "linear_vol2splat_sum2",
+    "linear_v2splat_sum2": "linear_v2splat_sum2",
+    "gaussian": "gaussian",
+    "gaussian_sum2": "gaussian_sum2",
+    "gaussian_pair": "gaussian_pair",
     "linear_gs": "linear_gs",
+    "linear_gsdatagen": "linear_gsdatagen",
     "linear_gs_sum2": "linear_gs_sum2",
+    "linear_gs_pair": "linear_gs_pair",
 }
 
 CMAP_PRESETS = {
     "Viridis": "Viridis (matplotlib)",
     "Turbo": "Turbo",
     "Cool to Warm (Extended)": "Cool to Warm (Extended)",
+    "Cool to Warm": "Cool to Warm",
     "Grayscale": "Grayscale",
     "Inferno": "Inferno (matplotlib)",
+    "Blue Orange (divergent)": "Blue Orange (divergent)",
+    "Blue - Green - Orange": "Blue - Green - Orange",
+    "Bluw - Green - Orange": "Blue - Green - Orange",
+    "Rainbow Uniform": "Rainbow Uniform",
+    "Rainbow Desaturated": "Rainbow Desaturated",
     "Yellow - Gray - Blue": "Yellow - Gray - Blue",
+    "Yellow - Grey - Blue": "Yellow - Gray - Blue",
     "Black, Blue and White": "Black, Blue and White",
+    "Jet": "Jet",
 }
 
 
@@ -50,32 +74,143 @@ def _slugify(value: str) -> str:
     return text.strip("_").lower() or "item"
 
 
+def _clone_value(value: Any) -> Any:
+    return copy.deepcopy(value)
+
+
 def _update_batch_section(batch_cfg: Dict[str, Any], case_start: str, case_end: str) -> None:
     batch_cfg["case_start"] = case_start
     batch_cfg["case_end"] = case_end
     batch_cfg["case_range"] = f"{case_start}~{case_end}"
 
 
-def _update_render_section(render_cfg: Dict[str, Any], tf_mode: str, cmap_name: str) -> None:
-    render_cfg["tf_mode"] = resolve_tf_mode(tf_mode)
-    # Store cmaps as a YAML list so names containing commas stay intact.
-    render_cfg["cmaps"] = [resolve_cmap_name(cmap_name)]
+def _normalize_render_value(key: str, value: Any) -> Any:
+    if key == "tf_mode":
+        return resolve_tf_mode(str(value))
+    if key == "cmaps":
+        if isinstance(value, list):
+            return [resolve_cmap_name(str(item)) for item in value]
+        return [resolve_cmap_name(str(value))]
+    if key == "cmap":
+        return [resolve_cmap_name(str(value))]
+    return _clone_value(value)
+
+
+def _set_render_param(render_cfg: Dict[str, Any], key: str, value: Any) -> None:
+    normalized = _normalize_render_value(key, value)
+    if key == "cmap":
+        render_cfg["cmaps"] = normalized
+        return
+    render_cfg[key] = normalized
+
+
+def _apply_render_overrides(render_cfg: Dict[str, Any], overrides: Dict[str, Any] | None) -> None:
+    if not overrides:
+        return
+    for key, value in overrides.items():
+        _set_render_param(render_cfg, str(key), value)
 
 
 def build_stack_item_config_data(template_data: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
     config_data = copy.deepcopy(template_data)
     batch_cfg = config_data.setdefault("batch", {})
     render_cfg = config_data.setdefault("render", {})
-    _update_batch_section(batch_cfg, case_start=str(item["case_start"]), case_end=str(item["case_end"]))
-    _update_render_section(render_cfg, tf_mode=str(item["tf_mode"]), cmap_name=str(item["cmap"]))
+    case_start = item.get("case_start")
+    case_end = item.get("case_end")
+    if case_start is not None or case_end is not None:
+        if case_start is None or case_end is None:
+            raise ValueError("Stack item must provide both case_start and case_end when either is set")
+        _update_batch_section(batch_cfg, case_start=str(case_start), case_end=str(case_end))
+    _apply_render_overrides(
+        render_cfg,
+        {
+            "tf_mode": item["tf_mode"],
+            "cmap": item["cmap"],
+        },
+    )
+    _apply_render_overrides(render_cfg, item.get("render_overrides"))
     return config_data
+
+
+def _render_sweep_axes_from_item(item: Dict[str, Any]) -> list[tuple[str, list[Any]]]:
+    axes: list[tuple[str, list[Any]]] = []
+    if item.get("cmaps") is not None:
+        cmaps = item.get("cmaps")
+        if not isinstance(cmaps, list) or not cmaps:
+            raise ValueError(f"Stack item cmaps must be a non-empty list, got {cmaps!r}")
+        axes.append(("cmap", list(cmaps)))
+    if item.get("tf_modes") is not None:
+        tf_modes = item.get("tf_modes")
+        if not isinstance(tf_modes, list) or not tf_modes:
+            raise ValueError(f"Stack item tf_modes must be a non-empty list, got {tf_modes!r}")
+        axes.append(("tf_mode", list(tf_modes)))
+    render_sweep = item.get("render_sweep")
+    if render_sweep is not None:
+        if not isinstance(render_sweep, dict) or not render_sweep:
+            raise ValueError(f"Stack item render_sweep must be a non-empty dict, got {render_sweep!r}")
+        for key, values in render_sweep.items():
+            if not isinstance(values, list) or not values:
+                raise ValueError(f"render_sweep.{key} must be a non-empty list, got {values!r}")
+            axes.append((f"render.{key}", list(values)))
+    return axes
+
+
+def _suffix_parts_from_combo(combo_items: list[tuple[str, Any]]) -> list[str]:
+    parts: list[str] = []
+    for key, value in combo_items:
+        last_key = key.split(".")[-1]
+        normalized_value = _normalize_render_value(last_key, value)
+        if last_key in {"cmaps", "cmap"} and isinstance(normalized_value, list):
+            value_slug = _slugify("_".join(str(item) for item in normalized_value))
+        else:
+            value_slug = _slugify(str(normalized_value))
+        parts.append(f"{_slugify(last_key)}_{value_slug}")
+    return parts
+
+
+def _expand_stack_item(item: Dict[str, Any]) -> list[Dict[str, Any]]:
+    axes = _render_sweep_axes_from_item(item)
+    if not axes:
+        return [dict(item)]
+
+    base_item = dict(item)
+    base_item.pop("cmaps", None)
+    base_item.pop("tf_modes", None)
+    base_item.pop("render_sweep", None)
+    base_name = str(base_item.get("name") or "item")
+    expanded_items: list[Dict[str, Any]] = []
+    axis_keys = [key for key, _ in axes]
+    axis_values = [values for _, values in axes]
+
+    for combo in product(*axis_values):
+        expanded = dict(base_item)
+        combo_items = list(zip(axis_keys, combo))
+        render_overrides = dict(expanded.get("render_overrides") or {})
+        for key, value in combo_items:
+            if key == "cmap":
+                expanded["cmap"] = value
+            elif key == "tf_mode":
+                expanded["tf_mode"] = value
+            elif key.startswith("render."):
+                render_overrides[key.split(".", 1)[1]] = _clone_value(value)
+            else:
+                expanded[key] = _clone_value(value)
+        if render_overrides:
+            expanded["render_overrides"] = render_overrides
+        suffix = "_".join(_suffix_parts_from_combo(combo_items))
+        expanded["name"] = f"{base_name}_{suffix}" if suffix else base_name
+        expanded_items.append(expanded)
+    return expanded_items
 
 
 def _resolve_stack_items(stack_data: Dict[str, Any]) -> list[Dict[str, Any]]:
     items = stack_data.get("items") or stack_data.get("entries") or stack_data.get("jobs")
     if not isinstance(items, list) or not items:
         raise ValueError("Stack plan must contain a non-empty 'items' list")
-    return items
+    expanded_items: list[Dict[str, Any]] = []
+    for item in items:
+        expanded_items.extend(_expand_stack_item(dict(item)))
+    return expanded_items
 
 
 def _resolve_stack_template(stack_path: str, stack_data: Dict[str, Any]) -> str:
@@ -153,7 +288,7 @@ def generate_config_stack(
     generated_items: list[Dict[str, Any]] = []
     Path(resolved_output_dir).mkdir(parents=True, exist_ok=True)
     for index, item in enumerate(items, start=1):
-        missing = [key for key in ("name", "case_start", "case_end", "tf_mode", "cmap") if key not in item]
+        missing = [key for key in ("name", "tf_mode", "cmap") if key not in item]
         if missing:
             raise ValueError(f"Stack item #{index} is missing required keys: {', '.join(missing)}")
 
@@ -175,8 +310,8 @@ def generate_config_stack(
             {
                 "index": index,
                 "name": item.get("name"),
-                "case_start": str(item["case_start"]),
-                "case_end": str(item["case_end"]),
+                "case_start": str(item["case_start"]) if item.get("case_start") is not None else None,
+                "case_end": str(item["case_end"]) if item.get("case_end") is not None else None,
                 "tf_mode": resolve_tf_mode(str(item["tf_mode"])),
                 "cmap": resolve_cmap_name(str(item["cmap"])),
                 "output_root": item_dataset_output_root,

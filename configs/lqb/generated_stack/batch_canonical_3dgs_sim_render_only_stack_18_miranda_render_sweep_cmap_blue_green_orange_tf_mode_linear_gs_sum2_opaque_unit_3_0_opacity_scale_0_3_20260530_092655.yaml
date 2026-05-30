@@ -1,0 +1,62 @@
+batch:
+  raw_root: raw_sim/openscivis_canonical_vti
+  output_root: /root/autodl-tmp/projects/Vol2Splat/outputs/openscivis_canonical_render_sweep/miranda_render_sweep_cmap_blue_green_orange_tf_mode_linear_gs_sum2_opaque_unit_3_0_opacity_scale_0_3
+  case_glob: '*'
+  case_ids:
+  - miranda_1024x1024x1024_float32_part_0000
+  - miranda_1024x1024x1024_float32_part_0001
+  - miranda_1024x1024x1024_float32_part_0002
+  - miranda_1024x1024x1024_float32_part_0003
+  - miranda_1024x1024x1024_float32_part_0004
+  - miranda_1024x1024x1024_float32_part_0005
+  - miranda_1024x1024x1024_float32_part_0006
+  - miranda_1024x1024x1024_float32_part_0007
+  - miranda_1024x1024x1024_float32_part_0008
+  - miranda_1024x1024x1024_float32_part_0009
+  size: 10
+  shuffle: true
+  seed: 7
+io:
+  reader: vti
+  path: raw_sim/openscivis_canonical_vti/{case_id}/{case_id}_canonical.vti
+render:
+  renderer: pv_engine
+  path: '{batch_output_dir}/{case_id}'
+  executable: pvpython
+  num: 64
+  w: 512
+  h: 512
+  vfov: 45
+  test_num: 10
+  radius_scale: 0.8
+  scene_bbox_size: 2.6
+  cmaps:
+  - Blue - Green - Orange
+  band_count: 10
+  shading: 0
+  opaque_unit: 3.0
+  fxaa: 1
+  tf_mode: linear_gs_sum2
+  index: true
+  qc:
+    enabled: true
+    skip_failed_tf: true
+    min_nonzero_ratio: 0.05
+    min_mean_intensity: 0.03
+    min_intensity_std: 0.005
+    alpha_threshold: 0.02
+    fft_cutoff_ratio: 0.12
+    min_masked_fft_high_freq_ratio: 0.0095
+    min_detail_over_opacity: 0.075
+    rescue_foggy_foreground_alpha_max: 0.5
+    rescue_foggy_min_masked_fft_high_freq_ratio: 0.011
+    rescue_foggy_min_detail_over_opacity: 0.055
+    rescue_peak_structure_allowed_reasons:
+    - foggy_low_detail
+    - low_masked_high_frequency
+    rescue_peak_structure_foreground_alpha_max: 0.6
+    rescue_peak_structure_min_nonzero_ratio: 0.05
+    rescue_peak_structure_min_mean_intensity: 0.03
+    rescue_peak_structure_min_max_masked_fft_high_freq_ratio: 0.0117
+    rescue_peak_structure_min_max_detail_over_opacity: 0.06
+  opacity_scale: 0.3

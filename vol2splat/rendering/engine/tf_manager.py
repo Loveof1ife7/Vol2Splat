@@ -41,7 +41,7 @@ class TFManager:
         self.sum2_partner_map = self._build_sum2_partner_map(n_bands)
         if n_bands >= 2:
             print(
-                "[info] linear_gs_sum2 partner map:",
+                "[info] sum2 partner map (linear_sum2 / linear_soft_sum2 / gaussian_sum2):",
                 ", ".join(f"TF{i:02d}->TF{j:02d}" for i, j in sorted(self.sum2_partner_map.items())),
             )
         print("[info] cmaps to process:", ", ".join(self.cmaps))
@@ -81,9 +81,10 @@ class TFManager:
                     mode: str = "unit") -> List[float]:
         """
         生成透明度传输函数点（Points）。
-        mode: "unit" (矩形), "linear" (兼容旧版本), "linear_gs" (gs-datagen风格三角峰),
-              "linear_gs_sum2" (相邻两个 linear_gs 叠加),
-              "linear_vol2splat" (当前肩部+峰值), "gaussian" (高斯)
+        mode: "unit" (矩形),
+              "linear" (尖锐三角峰), "linear_sum2" (两个尖锐三角峰叠加),
+              "linear_soft" (带 shoulder 的柔和峰), "linear_soft_sum2" (两个柔和峰叠加),
+              "gaussian" (高斯), "gaussian_sum2" (两个高斯峰叠加)
         """
         band_edges=self.band_edges_data
         # 1. 确定当前 band 的边界 (low, high)
@@ -96,16 +97,65 @@ class TFManager:
             high_local = float(arr_min) + float(band_idx) * band_w
             return low_local, high_local
 
-        def _linear_gs_tuples(low_local: float, high_local: float) -> List[tuple[float, float]]:
+        def _linear_soft_tuples(low_local: float, high_local: float) -> List[tuple[float, float]]:
+            # Soft / Vol2Splat 风格：肩部 + 峰值
             mid_local = (low_local + high_local) / 2.0
+            width_local = (high_local - low_local)
+            delta_local = max(0.05 * width_local, 1e-9)  # 5% shoulder
+
             tuples = [(float(arr_min), 0.0)]
             if low_local > float(arr_min):
                 tuples.append((low_local, 0.0))
-            tuples.append((mid_local, 1.0))
+
+            tuples.append((low_local + delta_local, 0.08))
+            tuples.append((mid_local, 0.5))
+            tuples.append((high_local - delta_local, 0.08))
+
             if high_local < float(arr_max):
                 tuples.append((high_local, 0.0))
             tuples.append((float(arr_max), 0.0))
             return tuples
+
+        def _linear_tuples(low_local: float, high_local: float) -> List[tuple[float, float]]:
+            mid_local = (low_local + high_local) / 2.0
+            tuples = [(float(arr_min), 0.0)]
+            if low_local > float(arr_min):
+                tuples.append((low_local, 0.0))
+            tuples.append((mid_local, 0.5))
+            if high_local < float(arr_max):
+                tuples.append((high_local, 0.0))
+            tuples.append((float(arr_max), 0.0))
+            return tuples
+
+        def _gaussian_tuples(low_local: float, high_local: float) -> List[tuple[float, float]]:
+            mean_local = (low_local + high_local) / 2.0
+            width_local = high_local - low_local
+            # 4-sigma 逻辑：在 low 和 high 处，alpha 约 0.135
+            std_local = max(width_local / 4.0, 1e-9)
+            N_SAMPLES = 64
+            eps_local = (arr_max - arr_min) * 0.0001
+
+            tuples = [(float(arr_min), 0.0)]
+            if low_local > float(arr_min):
+                tuples.append((low_local - eps_local, 0.0))
+            for x in np.linspace(low_local, high_local, N_SAMPLES, dtype=float):
+                z = (x - mean_local) / std_local
+                alpha = math.exp(-0.5 * z * z)
+                tuples.append((float(x), alpha))
+            if high_local < float(arr_max):
+                tuples.append((high_local + eps_local, 0.0))
+            tuples.append((float(arr_max), 0.0))
+            return tuples
+
+        def _sum2_tuples(pts1: List[tuple[float, float]],
+                         pts2: List[tuple[float, float]]) -> List[tuple[float, float]]:
+            x1 = np.array([p[0] for p in pts1], dtype=float)
+            a1 = np.array([p[1] for p in pts1], dtype=float)
+            x2 = np.array([p[0] for p in pts2], dtype=float)
+            a2 = np.array([p[1] for p in pts2], dtype=float)
+            xs = np.unique(np.concatenate([x1, x2]))
+            sum_alpha = np.interp(xs, x1, a1) + np.interp(xs, x2, a2)
+            return list(zip(xs.tolist(), sum_alpha.tolist()))
 
         low, high = _band_range(idx)
 
@@ -129,86 +179,61 @@ class TFManager:
             
             print(f"[info] TF band {idx}/{n_b} (unit): [{low:.6g}, {high:.6g}]")
 
-        elif mode in ("linear", "linear_vol2splat", "linear_v2splat"):
-            # Vol2Splat 风格：肩部 + 峰值（向后兼容 linear）
+        elif mode in ("linear", "linear_gs", "linear_gsdatagen"):
+            # 尖锐三角峰：原 linear_gs / gs-datagen 风格，重命名为 linear 系列
             mid = (low + high) / 2.0
-            width = (high - low)
-            delta = max(0.05 * width, 1e-9)  # 5% shoulder
+            pts_tuples = _linear_tuples(low, high)
+            print(f"[info] TF band {idx}/{n_b} ({mode} sharp triangle): [{low:.6g}, {high:.6g}], peak at {mid:.6g}")
 
-            pts_tuples.append((float(arr_min), 0.0))
-            if low > float(arr_min):
-                pts_tuples.append((low, 0.0)) # band 开始点
-
-            pts_tuples.append((low + delta, 0.08))    
-            pts_tuples.append((mid, 0.2)) # band 中心点 (峰值)
-            pts_tuples.append((high - delta, 0.08))
-
-            if high < float(arr_max):
-                pts_tuples.append((high, 0.0)) # band 结束点
-            pts_tuples.append((float(arr_max), 0.0))
-            
-            print(f"[info] TF band {idx}/{n_b} ({mode}): [{low:.6g}, {high:.6g}], peak at {mid:.6g}")
-
-        elif mode in ("linear_gs", "linear_gsdatagen"):
-            # gs-datagen 风格：单峰三角（基准峰值 1.0，后续统一乘 opacity_scale）
-            mid = (low + high) / 2.0
-            pts_tuples = _linear_gs_tuples(low, high)
-            print(f"[info] TF band {idx}/{n_b} ({mode}): [{low:.6g}, {high:.6g}], peak at {mid:.6g}")
-
-        elif mode in ("linear_gs_sum2", "linear_gs_pair"):
-            # 将当前 band 与随机另一 band（优先非相邻）的 linear_gs 三角峰线性叠加
+        elif mode in ("linear_sum2", "linear_pair", "linear_gs_sum2", "linear_gs_pair"):
+            # 两个尖锐三角峰叠加：原 linear_gs_sum2，重命名为 linear_sum2
             pair_idx = int(self.sum2_partner_map.get(idx, idx))
             low2, high2 = _band_range(pair_idx)
-            pts1 = _linear_gs_tuples(low, high)
-            pts2 = _linear_gs_tuples(low2, high2)
-
-            x1 = np.array([p[0] for p in pts1], dtype=float)
-            a1 = np.array([p[1] for p in pts1], dtype=float)
-            x2 = np.array([p[0] for p in pts2], dtype=float)
-            a2 = np.array([p[1] for p in pts2], dtype=float)
-            xs = np.unique(np.concatenate([x1, x2]))
-            sum_alpha = np.interp(xs, x1, a1) + np.interp(xs, x2, a2)
-            pts_tuples = list(zip(xs.tolist(), sum_alpha.tolist()))
+            pts1 = _linear_tuples(low, high)
+            pts2 = _linear_tuples(low2, high2)
+            pts_tuples = _sum2_tuples(pts1, pts2)
             print(
-                f"[info] TF band {idx}/{n_b} ({mode}): add linear_gs[{idx}] + linear_gs[{pair_idx}] "
+                f"[info] TF band {idx}/{n_b} ({mode} sharp triangle sum2): add linear[{idx}] + linear[{pair_idx}] "
+                f"ranges [{low:.6g}, {high:.6g}] + [{low2:.6g}, {high2:.6g}]"
+            )
+
+        elif mode in ("linear_soft", "linear_vol2splat", "linear_v2splat"):
+            # 带 shoulder 的柔和峰：原 linear / Vol2Splat 风格，重命名为 linear_soft 系列
+            mid = (low + high) / 2.0
+            pts_tuples = _linear_soft_tuples(low, high)
+            print(f"[info] TF band {idx}/{n_b} ({mode} soft shoulder): [{low:.6g}, {high:.6g}], peak at {mid:.6g}")
+
+        elif mode in ("linear_soft_sum2", "linear_vol2splat_sum2", "linear_v2splat_sum2"):
+            # 两个带 shoulder 的柔和峰叠加
+            pair_idx = int(self.sum2_partner_map.get(idx, idx))
+            low2, high2 = _band_range(pair_idx)
+            pts1 = _linear_soft_tuples(low, high)
+            pts2 = _linear_soft_tuples(low2, high2)
+            pts_tuples = _sum2_tuples(pts1, pts2)
+            print(
+                f"[info] TF band {idx}/{n_b} ({mode} soft shoulder sum2): add linear_soft[{idx}] + linear_soft[{pair_idx}] "
                 f"ranges [{low:.6g}, {high:.6g}] + [{low2:.6g}, {high2:.6g}]"
             )
 
         elif mode == "gaussian":
             mean = (low + high) / 2.0
-            width = high - low
-            # 4-sigma 逻辑：在 low 和 high 处，alpha 约 0.135
-            std = max(width / 4.0, 1e-9) 
-            
-            # 在 band 内采样 64 个点以创建平滑曲线
-            N_SAMPLES = 64 
-            
-            # 使用一个极小值来创建清晰的边界
-            eps = (arr_max - arr_min) * 0.0001 
-            
-            pts_tuples = []
-            
-            # 1. 最小值到 band 开始前
-            pts_tuples.append((float(arr_min), 0.0))
-            if low > float(arr_min):
-                pts_tuples.append((low - eps, 0.0)) # 在 band 开始前保持为 0
-            
-            # 2. 生成平滑的高斯曲线
-            # 使用 np.linspace 来确保包含 low 和 high 点
-            sample_points = np.linspace(low, high, N_SAMPLES, dtype=float) 
-            for x in sample_points:
-                z = (x - mean) / std
-                alpha = math.exp(-0.5 * z * z)
-                pts_tuples.append((float(x), alpha))
-                
-            # 3. band 结束后
-            if high < float(arr_max):
-                # 在 high 点的值由 linspace 保证
-                pts_tuples.append((high + eps, 0.0)) # 在 band 结束后立刻降为 0
-                
-            pts_tuples.append((float(arr_max), 0.0))
-            
+            std = max((high - low) / 4.0, 1e-9)
+            pts_tuples = _gaussian_tuples(low, high)
             print(f"[info] TF band {idx}/{n_b} (gaussian): mean={mean:.6g}, std={std:.6g} over [{low:.6g}, {high:.6g}]")
+
+        elif mode in ("gaussian_sum2", "gaussian_pair"):
+            # 两个高斯峰叠加
+            pair_idx = int(self.sum2_partner_map.get(idx, idx))
+            low2, high2 = _band_range(pair_idx)
+            pts1 = _gaussian_tuples(low, high)
+            pts2 = _gaussian_tuples(low2, high2)
+            pts_tuples = _sum2_tuples(pts1, pts2)
+            mean1 = (low + high) / 2.0
+            mean2 = (low2 + high2) / 2.0
+            print(
+                f"[info] TF band {idx}/{n_b} ({mode}): add gaussian[{idx}] + gaussian[{pair_idx}] "
+                f"means {mean1:.6g} + {mean2:.6g}, ranges [{low:.6g}, {high:.6g}] + [{low2:.6g}, {high2:.6g}]"
+            )
 
         else:
             print(f"[warn] 未知的 TF mode: {mode}。返回空 TF。")

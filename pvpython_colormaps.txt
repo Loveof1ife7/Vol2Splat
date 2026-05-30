@@ -1,17 +1,17 @@
-0	Cool to Warm *
-1	Cool to Warm (Extended) *
+0	Cool to Warm
+1	Cool to Warm (Extended)
 2	Black-Body Radiation
-3	X Ray *
-4	Inferno (matplotlib) *
-5	Black, Blue and White *
-6	Blue Orange (divergent) *
+3	X Ray
+4	Inferno (matplotlib)
+5	Black, Blue and White
+6	Blue Orange (divergent)
 7	Viridis (matplotlib)
 8	Gray and Red
 9	Linear Green (Gr4L)
 10	Cold and Hot
-11	Blue - Green - Orange *
+11	Blue - Green - Orange
 12	Rainbow Desaturated
-13	Yellow - Gray - Blue *
+13	Yellow - Gray - Blue
 14	Rainbow Uniform
 15	Turbo
 16	Jet
@@ -193,4 +193,4 @@
 192	Traffic Lights Step
 193	Traffic Lights For Deuteranopes Step
 194	Traffic Lights For Deuteranopes 2 Step
-195	Fast *
+195	Fast

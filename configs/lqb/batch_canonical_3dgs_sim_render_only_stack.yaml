@@ -1,0 +1,16 @@
+template: batch_canonical_3dgs_sim_render_only.yaml
+output_dir: generated_stack
+dataset_output_root: outputs/openscivis_canonical_render_only_by_cmap
+
+items:
+  - name: miranda_render_only
+    tf_mode: linear_gs_sum2
+    cmaps:
+      - Cool to Warm (Extended)
+      - Blue Orange (divergent)
+      - Blue - Green - Orange
+      - Rainbow Uniform
+      - Yellow - Grey - Blue
+      - Turbo
+      - Rainbow Desaturated
+      - Jet

@@ -1,0 +1,30 @@
+batch:
+  # preprocess-only experiment for all .vti files under raw_sim/vti_cache
+  # first prepare one-case-per-vti symlink tree with:
+  #   python scripts/prepare_vti_cache_cases.py \
+  #     --source-root raw_sim/vti_cache \
+  #     --output-root raw_sim/vti_cache_cases \
+  #     --clean-output-root
+  raw_root: raw_sim/vti_cache_cases
+  output_root: outputs/openscivis_canonical_vti/
+  case_glob: "*"
+  size: 10
+  shuffle: true
+  seed: 7
+  # optional: only run one batch at a time
+  # batch_index: 1
+
+io:
+  reader: vti
+  path: raw_sim/vti_cache_cases/{case_id}/input.vti
+
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    # default behavior:
+    # 1. min-max normalize scalar volume to [0,1]
+    # 2. pad witcondah 0 after normalization
+    pad_to_cube: true
+    write_vti: true
+    vti_path: outputs/openscivis_canonical_vti/{case_id}/{input_stem}_canonical.vti

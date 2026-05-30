@@ -1,0 +1,61 @@
+batch:
+  raw_root: raw/high_quality/sim/VBM-teaser
+  output_root: outputs/high_quality_vbm_teaser
+  case_glob: "*"
+  filename: canonical.vti
+  size: 10
+  shuffle: false
+  seed: 7
+  case_ids:
+    - hnut512_uint
+    - isotropic
+    - prone_512x512x512_uint16
+    - supernova_432x432x432_float32
+
+io:
+  reader: vti
+  path: raw/high_quality/sim/VBM-teaser/{case_id}/canonical.vti
+
+render:
+  path: outputs/high_quality_vbm_teaser/{case_id}
+  renderer: pv_engine
+  executable: pvpython
+  num: 84
+  test_num: 20
+  w: 512
+  h: 512
+  radius_scale: 0.5
+  opaque_unit: 2.0
+  scene_bbox_size: 2.6
+  camera_convention: opencv
+  tf_json_root: raw/high_quality/sim/VBM-teaser
+
+  qc:
+    enabled: true
+    skip_failed_tf: true
+    min_nonzero_ratio: 0.01
+    min_mean_intensity: 0.01
+    min_intensity_std: 0.005
+
+sampling:
+  name: opacity
+  n_points: 100000
+  tf_backend: torch
+  tf_device: cuda
+  uniform_tf_filter: true
+  uniform_stride: auto
+  alpha_threshold: 0.0
+  jitter: true
+  anisotropic_init: true
+  aniso_field: alpha
+  aniso_voxel_size_mode: mean_spacing
+  aniso_tangent_scale_mul: 1.2
+  aniso_normal_scale_mul: 0.1
+  aniso_min_linear_scale: 1.0e-06
+
+export:
+  writer: gs_ply
+  params:
+    sh_degree: 3
+    negate_yz_axes: true
+    default_linear_scale: 0.01

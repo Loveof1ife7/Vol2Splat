@@ -180,12 +180,22 @@ def _apply_metric_rescue_rules(
             remaining = []
             rescue_codes.append("rescued_foggy_good_structure")
 
-    allowed_peak_rescue_reasons = {
-        "foggy_low_detail",
-        "low_masked_high_frequency",
-        "too_dark",
-        "too_sparse",
-    }
+    configured_allowed_peak_reasons = qc_cfg.get("rescue_peak_structure_allowed_reasons")
+    if configured_allowed_peak_reasons is None:
+        allowed_peak_rescue_reasons = {
+            "foggy_low_detail",
+            "low_masked_high_frequency",
+            "too_dark",
+            "too_sparse",
+        }
+    else:
+        if isinstance(configured_allowed_peak_reasons, str):
+            configured_allowed_peak_reasons = [configured_allowed_peak_reasons]
+        allowed_peak_rescue_reasons = {
+            str(reason).strip()
+            for reason in configured_allowed_peak_reasons
+            if str(reason).strip()
+        }
     rescue_peak_alpha_max = qc_cfg.get("rescue_peak_structure_foreground_alpha_max")
     rescue_peak_max_masked_hf = qc_cfg.get("rescue_peak_structure_min_max_masked_fft_high_freq_ratio")
     rescue_peak_max_detail = qc_cfg.get("rescue_peak_structure_min_max_detail_over_opacity")

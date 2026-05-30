@@ -85,6 +85,8 @@ render:
 - 失败 TF 不进入采样阶段
 - 空 TF 目录会在 batch 收尾清理
 - 最终 `_batch_done.json` 只记录有效 TF
+- 除了亮度 / coverage / 对比度，还可加 `min_masked_fft_high_freq_ratio`、`min_detail_over_opacity`
+  来筛掉 “coverage 很大但画面雾、细节频带很低” 的 TF
 
 ---
 

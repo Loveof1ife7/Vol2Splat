@@ -1,5 +1,6 @@
 batch:
-   case_ids:
+  raw_root: raw/totalseg3d
+  case_ids:
     - s0244
     - s0652
     - s0693
@@ -9,7 +10,7 @@ batch:
     - s1348
 io:
   reader: nii
-  path: raw/{case_id}/ct.nii.gz
+  path: raw/totalseg3d/{case_id}/ct.nii.gz
 preprocess:
 - name: canonicalize
   backend: torch

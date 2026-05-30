@@ -1,0 +1,33 @@
+# 仅 canonicalize + 体渲染 PNG，不做 sampling / 不导出点云（无 export 段）。
+# 必须通过 YAML 的 batch.case_ids 或 CLI --case-ids 指定子集（本文件 require_case_ids 防误跑全库）。
+batch:
+  raw_root: raw/totalseg3d
+  require_case_ids: true
+io:
+  reader: nii
+  path: raw/totalseg3d/{case_id}/ct.nii.gz
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    pad_to_cube: true
+    write_vti: true
+    vti_path: outputs/{batch_id}/{case_id}/{input_stem}_canonical.vti
+render:
+  path: outputs/{batch_id}/{case_id}
+  renderer: pv_engine
+  executable: pvpython
+  num: 36
+  test_num: 12
+  w: 512
+  h: 512
+  opaque_unit: 2.0
+  scene_bbox_size: 2.6
+  camera_convention: opencv
+  tf_json_root: raw/high_quality/medical
+  qc:
+    enabled: true
+    skip_failed_tf: true
+    min_nonzero_ratio: 0.01
+    min_mean_intensity: 0.01
+    min_intensity_std: 0.005

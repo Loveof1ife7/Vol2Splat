@@ -1,0 +1,27 @@
+template: batch_canonical_3dgs_sim_render_only.yaml
+output_dir: generated_stack
+dataset_output_root: outputs/openscivis_canonical_render_sweep
+
+items:
+  - name: miranda_render_sweep
+    # Cartesian product:
+    # len(tf_modes) x len(cmaps) x len(opaque_unit) x len(opacity_scale)
+    tf_modes:
+      - linear_gs_sum2
+      - gaussian
+    cmaps:
+      - Cool to Warm (Extended)
+      - Blue Orange (divergent)
+      - Blue - Green - Orange
+      - Rainbow Uniform
+      - Yellow - Grey - Blue
+      - Turbo
+      - Rainbow Desaturated
+      - Jet
+    render_sweep:
+      opaque_unit:
+        - 3.0
+        - 7.0
+      opacity_scale:
+        - 0.1
+        - 0.3

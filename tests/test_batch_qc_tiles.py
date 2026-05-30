@@ -130,6 +130,31 @@ class TestBatchQCTiles(unittest.TestCase):
         self.assertEqual(sparse_reasons, ["too_sparse", "too_dark"])
         self.assertEqual(sparse_codes, [])
 
+    def test_peak_structure_rescue_allowed_reasons_are_configurable(self):
+        kept_reasons, kept_codes = _apply_metric_rescue_rules(
+            {
+                "foreground_alpha_mean": 0.45,
+                "nonzero_ratio": 0.08,
+                "mean_intensity": 0.04,
+                "max_masked_fft_high_freq_ratio": 0.19,
+                "max_detail_over_opacity": 0.9,
+            },
+            ["too_sparse", "too_dark"],
+            {
+                "rescue_peak_structure_allowed_reasons": [
+                    "foggy_low_detail",
+                    "low_masked_high_frequency",
+                ],
+                "rescue_peak_structure_foreground_alpha_max": 0.6,
+                "rescue_peak_structure_min_nonzero_ratio": 0.05,
+                "rescue_peak_structure_min_mean_intensity": 0.03,
+                "rescue_peak_structure_min_max_masked_fft_high_freq_ratio": 0.012,
+                "rescue_peak_structure_min_max_detail_over_opacity": 0.06,
+            },
+        )
+        self.assertEqual(kept_reasons, ["too_sparse", "too_dark"])
+        self.assertEqual(kept_codes, [])
+
     def test_discover_case_inputs_and_prepare_config(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             raw_root = os.path.join(tmpdir, "raw")

@@ -15,6 +15,7 @@ from .config import load_config, load_config_data
 from .registry import register_builtin_plugins, READERS, STAGES, SAMPLERS, WRITERS, RENDERERS, get_reader
 from .core.log import setup_logging
 from .rendering.segmentation_qc import evaluate_segmentation_image_paths
+from .rendering.qc import run_render_qc
 
 app = typer.Typer(help="Vol2Splat: Canonical volume to render/sample/export pipeline")
 
@@ -50,8 +51,13 @@ def _echo_generated_stack(summary: dict) -> None:
         f"date_tag={summary['date_tag']}"
     )
     for item in summary["items"]:
+        case_scope = (
+            f"{item['case_start']}~{item['case_end']}"
+            if item.get("case_start") is not None and item.get("case_end") is not None
+            else "template-case-scope"
+        )
         typer.echo(
-            f"  [{item['index']:02d}] {item['case_start']}~{item['case_end']} "
+            f"  [{item['index']:02d}] {case_scope} "
             f"tf_mode={item['tf_mode']} cmap={item['cmap']} "
             f"output_root={item['output_root']} -> {item['config_path']}"
         )
@@ -76,6 +82,32 @@ def _echo_seg_batch_report(report: dict) -> None:
     )
     if report.get("report_json"):
         typer.echo(f"Batch seg report: {report['report_json']}")
+
+
+def _discover_render_tf_outputs(render_dir: Path) -> list[dict]:
+    render_dir = render_dir.resolve()
+    tf_outputs: list[dict] = []
+
+    direct_tf_json = render_dir / "tf_config.json"
+    if direct_tf_json.is_file():
+        tf_outputs.append(
+            {
+                "tf_name": render_dir.name,
+                "tf_json": str(direct_tf_json.resolve()),
+                "tf_dir": str(render_dir),
+            }
+        )
+
+    for tf_json in sorted(render_dir.glob("*/tf_config.json")):
+        tf_dir = tf_json.parent.resolve()
+        tf_outputs.append(
+            {
+                "tf_name": tf_dir.name,
+                "tf_json": str(tf_json.resolve()),
+                "tf_dir": str(tf_dir),
+            }
+        )
+    return tf_outputs
 
 @app.callback()
 def main(verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging")):
@@ -294,6 +326,55 @@ def test_segmentation(
             output_json.parent.mkdir(parents=True, exist_ok=True)
             output_json.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
             typer.echo(f"Wrote segmentation test result to {output_json}")
+    except Exception as e:
+        _exit_with_error(e)
+
+
+@app.command("render-qc")
+def render_qc(
+    config_path: Path = typer.Option(..., "--config", "-c", help="Configuration file path"),
+    render_dir: Path = typer.Option(..., "--render-dir", help="Rendered case directory or a single TF directory"),
+    report_json: Optional[Path] = typer.Option(None, "--report-json", help="Optional output JSON path"),
+    report_md: Optional[Path] = typer.Option(None, "--report-md", help="Optional output Markdown path"),
+):
+    """Run render QC on an existing rendered directory without rerunning rendering."""
+    try:
+        config_data = load_config_data(str(config_path))
+        qc_cfg = (((config_data.get("render") or {}).get("qc")) or {})
+        if not qc_cfg:
+            raise ValueError("render.qc is missing in config")
+        if not qc_cfg.get("enabled", True):
+            raise ValueError("render.qc is disabled in config")
+
+        render_dir = render_dir.resolve()
+        if not render_dir.is_dir():
+            raise FileNotFoundError(f"Render directory not found: {render_dir}")
+
+        tf_outputs = _discover_render_tf_outputs(render_dir)
+        if not tf_outputs:
+            raise FileNotFoundError(f"No tf_config.json found under render directory: {render_dir}")
+
+        qc_cfg = dict(qc_cfg)
+        if report_json is not None:
+            qc_cfg["report_json"] = str(report_json.resolve())
+        if report_md is not None:
+            qc_cfg["report_md"] = str(report_md.resolve())
+
+        report = run_render_qc(
+            {
+                "output_dir": str(render_dir),
+                "tf_outputs": tf_outputs,
+            },
+            qc_cfg,
+        )
+        typer.echo(
+            f"Render QC completed. total_tf={report['total_tf']} "
+            f"passed={report['passed_tf']} failed={report['failed_tf']}"
+        )
+        typer.echo(f"QC JSON: {report['report_json']}")
+        typer.echo(f"QC Markdown: {report['report_md']}")
+        typer.echo(f"Passed TF: {', '.join(report['passed_tf_names']) if report['passed_tf_names'] else '-'}")
+        typer.echo(f"Failed TF: {', '.join(report['failed_tf_names']) if report['failed_tf_names'] else '-'}")
     except Exception as e:
         _exit_with_error(e)
 

@@ -4,7 +4,7 @@ batch:
   seed: 7
 
   seg:
-    raw_root: raw
+    raw_root: raw/totalseg3d
     output_root: outputs_seg
     case_range: s0000~s0000
     seg_subdir: after_seg_ct
@@ -14,7 +14,7 @@ batch:
 
 io:
   reader: nii
-  path: raw/{case_id}/ct.nii.gz
+  path: raw/totalseg3d/{case_id}/ct.nii.gz
 
 preprocess:
   - name: canonicalize

@@ -1,0 +1,110 @@
+batch:
+  raw_root: raw/totalseg3d
+  output_root: outputs/totalseg3d_qc_remake_v1
+  size: 10
+  shuffle: true
+  seed: 7
+  # optional: only run one batch at a time
+  # batch_index: 3
+
+io:
+  reader: 
+  path: raw/totalseg3d/{case_id}/ct.nii.gz
+  # optional: input tiling for huge source volumes
+  # tiling:
+  #   enabled: true
+  #   tile_size: 512
+  #   tile_stride: 512
+  #   write_tiles: true
+  #   output_dir: outputs/{batch_id}/{case_id}/input_tiles
+
+preprocess:
+  - name: canonicalize
+    backend: torch
+    target_spacing: 1.0
+    pad_to_cube: true
+    write_vti: true
+    vti_path: outputs/medical_batch/{batch_id}/{case_id}/{input_stem}_canonical.vti
+
+render:
+  renderer: pv_engine
+  path: outputs/medical_batch/{batch_id}/{case_id}
+  executable: pvpython
+  num: 64
+  w: 512
+  h: 512
+  vfov: 45
+  test_num: 10
+  radius_scale: 0.7
+  scene_bbox_size: 2.6
+  cmaps: Cool to Warm
+  band_count: 10
+  shading: 0
+  opaque_unit: 2.0
+  fxaa: 1
+  tf_mode: linear
+  index: true
+  
+  qc:
+    enabled: true
+    skip_failed_tf: true
+    min_nonzero_ratio: 0.05
+    min_mean_intensity: 0.03
+    min_intensity_std: 0.005
+    # reject foggy / low-bandwidth renders even if coverage is large
+    alpha_threshold: 0.02
+    fft_cutoff_ratio: 0.12
+    min_masked_fft_high_freq_ratio: 0.0095
+    min_detail_over_opacity: 0.075
+    # conservative rescue for renders that are slightly soft on average
+    # but still have enough foreground bandwidth / structure
+    rescue_foggy_foreground_alpha_max: 0.5
+    rescue_foggy_min_masked_fft_high_freq_ratio: 0.011
+    rescue_foggy_min_detail_over_opacity: 0.055
+    # broader rescue for soft-but-structured renders that spike on some views,
+    # while still enforcing a minimum overall coverage / brightness floor.
+    # Do not rescue TFs that are primarily too dark / too sparse.
+    rescue_peak_structure_allowed_reasons:
+      - foggy_low_detail
+      - low_masked_high_frequency
+    rescue_peak_structure_foreground_alpha_max: 0.6
+    rescue_peak_structure_min_nonzero_ratio: 0.05
+    rescue_peak_structure_min_mean_intensity: 0.03
+    rescue_peak_structure_min_max_masked_fft_high_freq_ratio: 0.0117
+    rescue_peak_structure_min_max_detail_over_opacity: 0.06
+    # segmentation:
+    #   enabled: true
+    #   backend: monai_unet
+    #   model_path: /path/to/your_monai_unet_weights.pt
+    #   # or auto-download weights:
+    #   # model_url: https://...
+    #   # download_dir: .cache/segmentation_models
+    #   # sha256: ...
+    #   device: cuda
+    #   input_size: [256, 256]
+    #   in_channels: 4
+    #   out_channels: 2
+    #   channels: [32, 64, 128, 256]
+    #   strides: [2, 2, 2]
+    #   target_class: 1
+    #   mask_threshold: 0.5
+    #   min_confidence: 0.5
+    #   min_foreground_ratio: 0.001
+    #   min_detected_frames: 2
+    #   min_detected_ratio: 0.2
+
+# sampling:
+#   name: opacity
+#   n_points: 100000
+#   tf_backend: torch
+#   tf_device: cuda
+
+# export:
+#   writer: ply
+#   path: outputs/medical_batch/{batch_id}/{case_id}
+
+selection:
+  top_tf:
+    # post-step: after render-qc finishes, keep the best 3 TF per scene
+    top_k: 3
+    output_root: outputs/totalseg3d_qc_remake_v1_top3
